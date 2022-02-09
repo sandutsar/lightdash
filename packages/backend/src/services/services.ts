@@ -1,6 +1,7 @@
 import EmailClient from '../clients/EmailClient/EmailClient';
 import { lightdashConfig } from '../config/lightdashConfig';
 import {
+    apiKeyModel,
     dashboardModel,
     emailModel,
     inviteLinkModel,
@@ -33,6 +34,7 @@ export const userService = new UserService({
     emailClient,
     organizationMemberProfileModel,
     organizationModel,
+    apiKeyModel,
 });
 export const organizationService = new OrganizationService({
     organizationModel,

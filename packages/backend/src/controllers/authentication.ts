@@ -9,6 +9,7 @@ import {
 } from 'common';
 import { Request, RequestHandler } from 'express';
 import { Strategy as GoogleStrategy } from 'passport-google-oidc';
+import { HeaderAPIKeyStrategy } from 'passport-headerapikey';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { URL } from 'url';
 import { lightdashConfig } from '../config/lightdashConfig';
@@ -72,6 +73,19 @@ export const localPassportStrategy = new LocalStrategy(
         }
     },
 );
+export const apiKeyPassportStrategy = new HeaderAPIKeyStrategy(
+    { header: 'Authorization', prefix: 'ApiKey' },
+    true,
+    async (apiKey, done) => {
+        try {
+            const user = await userService.loginWithApiKey(apiKey);
+            return done(null, user);
+        } catch {
+            return done(new AuthorizationError('Api Key is not recognised'));
+        }
+    },
+);
+
 export const getGoogleLogin: RequestHandler = (req, res, next) => {
     const { redirect, inviteCode } = req.query;
     req.session.oauth = {};

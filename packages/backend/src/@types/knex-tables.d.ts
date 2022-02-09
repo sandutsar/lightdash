@@ -1,3 +1,4 @@
+import { ApiKeyTable, ApiKeyTableName } from '../database/entities/apiKeys';
 import {
     DashboardsTableName,
     DashboardTable,
@@ -84,5 +85,6 @@ declare module 'knex/types/tables' {
         [OrganizationMembershipsTableName]: OrganizationMembershipsTable;
         [PasswordResetTableName]: PasswordResetTable;
         [PasswordLoginTableName]: PasswordLoginTable;
+        [ApiKeyTableName]: ApiKeyTable;
     }
 }

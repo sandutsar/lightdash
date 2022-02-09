@@ -178,6 +178,16 @@ export class UserModel {
         return mapDbUserDetailsToLightdashUser(user);
     }
 
+    async getUserDetailsById(userId: number): Promise<LightdashUser> {
+        const [user] = await userDetailsQueryBuilder(this.database)
+            .where('user_id', userId)
+            .select('*');
+        if (user === undefined) {
+            throw new NotFoundError('Cannot find user');
+        }
+        return mapDbUserDetailsToLightdashUser(user);
+    }
+
     async getUserByPrimaryEmail(email: string): Promise<LightdashUser> {
         const [user] = await userDetailsQueryBuilder(this.database)
             .where('email', email)

@@ -25,6 +25,7 @@ import {
     NotExistsError,
     NotFoundError,
 } from '../errors';
+import { ApiKeyModel } from '../models/DashboardModel/ApiKeyModel';
 import { EmailModel } from '../models/EmailModel';
 import { InviteLinkModel } from '../models/InviteLinkModel';
 import { OpenIdIdentityModel } from '../models/OpenIdIdentitiesModel';
@@ -44,6 +45,7 @@ type UserServiceDependencies = {
     emailClient: EmailClient;
     organizationMemberProfileModel: OrganizationMemberProfileModel;
     organizationModel: OrganizationModel;
+    apiKeyModel: ApiKeyModel;
 };
 
 export class UserService {
@@ -65,6 +67,8 @@ export class UserService {
 
     private readonly organizationModel: OrganizationModel;
 
+    private readonly apiKeyModel: ApiKeyModel;
+
     constructor({
         inviteLinkModel,
         userModel,
@@ -75,6 +79,7 @@ export class UserService {
         passwordResetLinkModel,
         organizationModel,
         organizationMemberProfileModel,
+        apiKeyModel,
     }: UserServiceDependencies) {
         this.inviteLinkModel = inviteLinkModel;
         this.userModel = userModel;
@@ -85,6 +90,7 @@ export class UserService {
         this.emailClient = emailClient;
         this.organizationModel = organizationModel;
         this.organizationMemberProfileModel = organizationMemberProfileModel;
+        this.apiKeyModel = apiKeyModel;
     }
 
     async createFromInvite(
@@ -560,6 +566,20 @@ export class UserService {
                 userId: user.userUuid,
                 event: 'password_reset_link.used',
             });
+        }
+    }
+
+    async loginWithApiKey(apiKey: string): Promise<LightdashUser> {
+        try {
+            const key = await this.apiKeyModel.getApiKeyByKey(apiKey);
+            const now = new Date();
+            if (key.expiresAt !== undefined && key.expiresAt <= now) {
+                throw new AuthorizationError();
+            }
+            const user = await this.userModel.getUserDetailsById(key.userId);
+            return user;
+        } catch (e) {
+            throw new AuthorizationError();
         }
     }
 }
