@@ -7,11 +7,13 @@ import {
     LightdashUser,
     OpenIdUser,
     OrganizationMemberRole,
+    PersonalAccessToken,
     SessionUser,
     UpdateUserArgs,
 } from 'common';
 import { Knex } from 'knex';
 import { URL } from 'url';
+import * as crypto from 'crypto';
 import { lightdashConfig } from '../config/lightdashConfig';
 import {
     createEmail,
@@ -38,6 +40,8 @@ import {
 import { NotExistsError, NotFoundError, ParameterError } from '../errors';
 import { InviteLinkModel } from './InviteLinkModel';
 import Transaction = Knex.Transaction;
+import { PersonalAccessTokenModel } from './DashboardModel/PersonalAccessTokenModel';
+import { DbPersonalAccessToken } from '../database/entities/personalAccessTokens';
 
 export type DbUserDetails = {
     user_id: number;
@@ -461,5 +465,30 @@ export class UserModel {
             })
             .onConflict('user_id')
             .merge();
+    }
+
+    async findUserByPersonalAccessToken(
+        token: string,
+    ): Promise<
+        | { user: LightdashUser; personalAccessToken: PersonalAccessToken }
+        | undefined
+    > {
+        const tokenHash = PersonalAccessTokenModel._hash(token);
+        const [row] = await userDetailsQueryBuilder(this.database)
+            .innerJoin(
+                'personal_access_tokens',
+                'personal_access_token.created_by_user_id',
+                'users.user_id',
+            )
+            .where('token_hash', tokenHash)
+            .select<(DbUserDetails & DbPersonalAccessToken)[]>('*');
+        if (row === undefined) {
+            return undefined;
+        }
+        return {
+            user: mapDbUserDetailsToLightdashUser(row),
+            personalAccessToken:
+                PersonalAccessTokenModel.mapDbObjectToPersonalAccessToken(row),
+        };
     }
 }

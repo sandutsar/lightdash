@@ -1,7 +1,7 @@
 import { lightdashConfig } from '../config/lightdashConfig';
 import database from '../database/database';
 import { EncryptionService } from '../services/EncryptionService/EncryptionService';
-import { ApiKeyModel } from './DashboardModel/ApiKeyModel';
+import { PersonalAccessTokenModel } from './DashboardModel/PersonalAccessTokenModel';
 import { DashboardModel } from './DashboardModel/DashboardModel';
 import { EmailModel } from './EmailModel';
 import { InviteLinkModel } from './InviteLinkModel';
@@ -35,4 +35,6 @@ export const passwordResetLinkModel = new PasswordResetLinkModel({
 });
 export const organizationMemberProfileModel =
     new OrganizationMemberProfileModel({ database });
-export const apiKeyModel = new ApiKeyModel({ database });
+export const personalAccessTokenModel = new PersonalAccessTokenModel({
+    database,
+});

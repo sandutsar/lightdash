@@ -1,0 +1,20 @@
+{
+    "type": "object",
+    "properties": {
+        "uuid": {
+            "type": "string"
+        },
+        "createdAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "description": {
+            "type": "string"
+        }
+    },
+    "required": ["uuid", "createdAt", "description"]
+}

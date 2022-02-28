@@ -38,7 +38,9 @@ type TrackSimpleEvent = BaseTrack & {
         | 'invite_link.all_revoked'
         | 'password_reset_link.created'
         | 'password_reset_link.used'
-        | 'sql.executed';
+        | 'sql.executed'
+        | 'personal_access_token.created'
+        | 'personal_access_token.deleted';
 };
 
 type LoginEvent = BaseTrack & {

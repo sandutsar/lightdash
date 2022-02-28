@@ -1,7 +1,7 @@
 import EmailClient from '../clients/EmailClient/EmailClient';
 import { lightdashConfig } from '../config/lightdashConfig';
 import {
-    apiKeyModel,
+    personalAccessTokenModel,
     dashboardModel,
     emailModel,
     inviteLinkModel,
@@ -21,6 +21,7 @@ import { OrganizationService } from './OrganizationService/OrganizationService';
 import { ProjectService } from './ProjectService/ProjectService';
 import { SavedChartsService } from './SavedChartsService/SavedChartsService';
 import { UserService } from './UserService';
+import { PersonalAccessTokenService } from './PersonalAccessTokenService';
 
 const emailClient = new EmailClient({ lightdashConfig });
 
@@ -34,7 +35,7 @@ export const userService = new UserService({
     emailClient,
     organizationMemberProfileModel,
     organizationModel,
-    apiKeyModel,
+    personalAccessTokenModel,
 });
 export const organizationService = new OrganizationService({
     organizationModel,
@@ -62,4 +63,8 @@ export const dashboardService = new DashboardService({
 
 export const savedChartsService = new SavedChartsService({
     projectModel,
+});
+
+export const personalAccessTokenService = new PersonalAccessTokenService({
+    personalAccessTokenModel,
 });

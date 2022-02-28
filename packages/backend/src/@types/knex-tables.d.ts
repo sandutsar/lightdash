@@ -1,4 +1,3 @@
-import { ApiKeyTable, ApiKeyTableName } from '../database/entities/apiKeys';
 import {
     DashboardsTableName,
     DashboardTable,
@@ -59,6 +58,10 @@ import {
     WarehouseCredentialTable,
     WarehouseCredentialTableName,
 } from '../database/entities/warehouseCredentials';
+import {
+    PersonalAccessTokenTable,
+    PersonalAccessTokenTableName,
+} from '../database/entities/personalAccessTokens';
 
 declare module 'knex/types/tables' {
     interface Tables {
@@ -85,6 +88,6 @@ declare module 'knex/types/tables' {
         [OrganizationMembershipsTableName]: OrganizationMembershipsTable;
         [PasswordResetTableName]: PasswordResetTable;
         [PasswordLoginTableName]: PasswordLoginTable;
-        [ApiKeyTableName]: ApiKeyTable;
+        [PersonalAccessTokenTableName]: PersonalAccessTokenTable;
     }
 }

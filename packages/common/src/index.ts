@@ -21,6 +21,7 @@ export * from './types/dashboard';
 export * from './types/filter';
 export * from './types/organization';
 export * from './types/organizationMemberProfile';
+export * from './types/personalAccessToken';
 export * from './types/savedCharts';
 export * from './types/user';
 

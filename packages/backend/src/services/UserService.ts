@@ -25,7 +25,7 @@ import {
     NotExistsError,
     NotFoundError,
 } from '../errors';
-import { ApiKeyModel } from '../models/DashboardModel/ApiKeyModel';
+import { PersonalAccessTokenModel } from '../models/DashboardModel/PersonalAccessTokenModel';
 import { EmailModel } from '../models/EmailModel';
 import { InviteLinkModel } from '../models/InviteLinkModel';
 import { OpenIdIdentityModel } from '../models/OpenIdIdentitiesModel';
@@ -45,7 +45,7 @@ type UserServiceDependencies = {
     emailClient: EmailClient;
     organizationMemberProfileModel: OrganizationMemberProfileModel;
     organizationModel: OrganizationModel;
-    apiKeyModel: ApiKeyModel;
+    personalAccessTokenModel: PersonalAccessTokenModel;
 };
 
 export class UserService {
@@ -67,7 +67,7 @@ export class UserService {
 
     private readonly organizationModel: OrganizationModel;
 
-    private readonly apiKeyModel: ApiKeyModel;
+    private readonly personalAccessTokenModel: PersonalAccessTokenModel;
 
     constructor({
         inviteLinkModel,
@@ -79,7 +79,7 @@ export class UserService {
         passwordResetLinkModel,
         organizationModel,
         organizationMemberProfileModel,
-        apiKeyModel,
+        personalAccessTokenModel,
     }: UserServiceDependencies) {
         this.inviteLinkModel = inviteLinkModel;
         this.userModel = userModel;
@@ -90,7 +90,7 @@ export class UserService {
         this.emailClient = emailClient;
         this.organizationModel = organizationModel;
         this.organizationMemberProfileModel = organizationMemberProfileModel;
-        this.apiKeyModel = apiKeyModel;
+        this.personalAccessTokenModel = personalAccessTokenModel;
     }
 
     async createFromInvite(
@@ -569,17 +569,21 @@ export class UserService {
         }
     }
 
-    async loginWithApiKey(apiKey: string): Promise<LightdashUser> {
-        try {
-            const key = await this.apiKeyModel.getApiKeyByKey(apiKey);
-            const now = new Date();
-            if (key.expiresAt !== undefined && key.expiresAt <= now) {
-                throw new AuthorizationError();
-            }
-            const user = await this.userModel.getUserDetailsById(key.userId);
-            return user;
-        } catch (e) {
+    async loginWithPersonalAccessToken(token: string): Promise<LightdashUser> {
+        const results = await this.userModel.findUserByPersonalAccessToken(
+            token,
+        );
+        if (results === undefined) {
             throw new AuthorizationError();
         }
+        const { user, personalAccessToken } = results;
+        const now = new Date();
+        if (
+            personalAccessToken.expiresAt !== undefined &&
+            personalAccessToken.expiresAt <= now
+        ) {
+            throw new AuthorizationError();
+        }
+        return user;
     }
 }

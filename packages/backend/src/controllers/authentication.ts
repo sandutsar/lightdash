@@ -76,12 +76,16 @@ export const localPassportStrategy = new LocalStrategy(
 export const apiKeyPassportStrategy = new HeaderAPIKeyStrategy(
     { header: 'Authorization', prefix: 'ApiKey' },
     true,
-    async (apiKey, done) => {
+    async (token, done) => {
         try {
-            const user = await userService.loginWithApiKey(apiKey);
+            const user = await userService.loginWithPersonalAccessToken(token);
             return done(null, user);
         } catch {
-            return done(new AuthorizationError('Api Key is not recognised'));
+            return done(
+                new AuthorizationError(
+                    'Personal access token is not recognised',
+                ),
+            );
         }
     },
 );
@@ -175,10 +179,9 @@ export const isAuthenticated: RequestHandler = (req, res, next) => {
         next(new AuthorizationError(`Failed to authorize user`));
     }
 };
-export const unauthorisedInDemo: RequestHandler = (req, res, next) => {
-    if (lightdashConfig.mode === LightdashMode.DEMO) {
-        throw new AuthorizationError('Action not available in demo');
-    } else {
+export const allowApiKeyAuthentication: RequestHandler = (req, res, next) => {
+    if (req.isAuthenticated()) {
         next();
     }
+    passport.authenticate('localapikey', { session: false })(req, res, next);
 };

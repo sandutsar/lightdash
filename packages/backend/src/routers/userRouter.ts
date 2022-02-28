@@ -5,7 +5,7 @@ import {
 } from '../controllers/authentication';
 import { userModel } from '../models/models';
 import { UserModel } from '../models/UserModel';
-import { userService } from '../services/services';
+import { personalAccessTokenService, userService } from '../services/services';
 import { sanitizeEmailParam, sanitizeStringParam } from '../utils';
 
 export const userRouter = express.Router();
@@ -132,6 +132,35 @@ userRouter.patch(
                     results,
                 });
             })
+            .catch(next);
+    },
+);
+
+userRouter.post(
+    '/me/personal-access-tokens',
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        personalAccessTokenService
+            .createPersonalAccessToken(req.user!, req.body)
+            .then((results) => res.json({ status: 'ok', results }))
+            .catch(next);
+    },
+);
+
+userRouter.get(
+    '/me/personal-access-tokens',
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        personalAccessTokenService
+            .getAllPersonalAccessTokens(req.user!)
+            .then((results) =>
+                res.json({
+                    status: 'ok',
+                    results,
+                }),
+            )
             .catch(next);
     },
 );

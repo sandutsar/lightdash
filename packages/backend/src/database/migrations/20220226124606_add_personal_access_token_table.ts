@@ -1,10 +1,16 @@
 import { Knex } from 'knex';
 
+const tableName = 'personal_access_tokens';
+
 export async function up(knex: Knex): Promise<void> {
-    if (!(await knex.schema.hasTable('api_keys'))) {
-        await knex.schema.createTable('api_keys', (tableBuilder) => {
+    if (!(await knex.schema.hasTable(tableName))) {
+        await knex.schema.createTable(tableName, (tableBuilder) => {
             tableBuilder
-                .integer('user_id')
+                .uuid('personal_access_token_uuid')
+                .primary()
+                .defaultTo(knex.raw('uuid_generate_v4()'));
+            tableBuilder
+                .integer('created_by_user_id')
                 .notNullable()
                 .references('user_id')
                 .inTable('users')
@@ -14,12 +20,12 @@ export async function up(knex: Knex): Promise<void> {
                 .timestamp('created_at', { useTz: false })
                 .notNullable()
                 .defaultTo(knex.fn.now());
-            tableBuilder.text('api_key_hash').notNullable().primary();
+            tableBuilder.text('token_hash').notNullable().primary();
             tableBuilder.timestamp('expires_at', { useTz: false }).nullable();
         });
     }
 }
 
 export async function down(knex: Knex): Promise<void> {
-    await knex.schema.dropTableIfExists('api_keys');
+    await knex.schema.dropTableIfExists(tableName);
 }
