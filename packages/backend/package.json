@@ -79,7 +79,7 @@
         "pg-connection-string": "^2.5.0",
         "redoc-express": "^1.0.0",
         "simple-git": "^2.48.0",
-        "snowflake-sdk": "^1.6.4",
+        "snowflake-sdk": "^1.6.21",
         "tempy": "^1.0.1",
         "uuid": "^8.3.2",
         "winston": "^3.3.3"
