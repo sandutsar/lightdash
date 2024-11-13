@@ -1,4 +1,9 @@
-import { DbtManifest, DbtPackages, DbtRpcDocsGenerateResults } from 'common';
+import {
+    DbtManifest,
+    DbtPackages,
+    DbtRpcDocsGenerateResults,
+    SupportedDbtVersions,
+} from '@lightdash/common';
 import { ExecaError, ExecaReturnValue } from 'execa';
 
 export const cliArgs = {
@@ -8,6 +13,8 @@ export const cliArgs = {
     profileName: 'profileName',
     target: 'target',
 };
+
+export const expectedDbtOptions = ['--no-use-colors', '--log-format', 'json'];
 
 export const expectedCommandOptions = [
     '--profiles-dir',
@@ -50,6 +57,7 @@ export const manifestMock: DbtManifest = {
         adapter_type: '',
     },
     metrics: {},
+    docs: {},
 };
 
 export const catalogMock: DbtRpcDocsGenerateResults = {

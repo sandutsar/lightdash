@@ -1,26 +1,48 @@
-import { HTMLSelect } from '@blueprintjs/core';
-import { FilterOperator } from 'common';
-import React, { FC } from 'react';
-import DefaultFilterInputs, { FilterInputsProps } from './DefaultFilterInputs';
+import {
+    FilterOperator,
+    isFilterRule,
+    type ConditionalRule,
+} from '@lightdash/common';
+import { Select } from '@mantine/core';
+import { type FilterInputsProps } from '.';
+import { getPlaceholderByFilterTypeAndOperator } from '../utils/getPlaceholderByFilterTypeAndOperator';
+import DefaultFilterInputs from './DefaultFilterInputs';
 
-const BooleanFilterInputs: FC<FilterInputsProps> = (props) => {
-    const { filterRule, onChange } = props;
-    switch (filterRule.operator) {
+const BooleanFilterInputs = <T extends ConditionalRule>(
+    props: FilterInputsProps<T>,
+) => {
+    const { rule, onChange, disabled, filterType, popoverProps } = props;
+
+    const isFilterRuleDisabled = isFilterRule(rule) && rule.disabled;
+
+    const placeholder = getPlaceholderByFilterTypeAndOperator({
+        type: filterType,
+        operator: rule.operator,
+        disabled: isFilterRuleDisabled,
+    });
+
+    switch (rule.operator) {
         case FilterOperator.EQUALS: {
             return (
-                <HTMLSelect
-                    fill
-                    onChange={(e) =>
-                        onChange({
-                            ...filterRule,
-                            values: [e.currentTarget.value === 'true'],
-                        })
-                    }
-                    options={[
+                <Select
+                    w="100%"
+                    size="xs"
+                    withinPortal={popoverProps?.withinPortal}
+                    onDropdownOpen={popoverProps?.onOpen}
+                    onDropdownClose={popoverProps?.onClose}
+                    disabled={disabled}
+                    placeholder={placeholder}
+                    data={[
                         { value: 'true', label: 'True' },
                         { value: 'false', label: 'False' },
                     ]}
-                    value={filterRule.values?.[0] ? 'true' : 'false'}
+                    value={rule.values?.[0]?.toString() ?? null}
+                    onChange={(value) =>
+                        onChange({
+                            ...rule,
+                            values: value === null ? [] : [value === 'true'],
+                        })
+                    }
                 />
             );
         }

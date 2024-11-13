@@ -1,15 +1,19 @@
-import { NonIdealState } from '@blueprintjs/core';
-import React, { FC, useMemo, useState } from 'react';
-import { useSqlQueryMutation } from '../../hooks/useSqlQuery';
+import { type ApiQueryResults, type Field } from '@lightdash/common';
+import { Box } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
+import React, { type FC } from 'react';
+import { type useSqlQueryMutation } from '../../hooks/useSqlQuery';
+import useSqlRunnerColumns from '../../hooks/useSqlRunnerColumns';
 import { TrackSection } from '../../providers/TrackingProvider';
 import { SectionName } from '../../types/Events';
-import { ResultsTable as Table } from '../ResultsTable/ResultsTable';
+import SuboptimalState from '../common/SuboptimalState/SuboptimalState';
+import Table from '../common/Table';
 import RunSqlQueryButton from './RunSqlQueryButton';
 
 const ResultsErrorState: FC<{ error: string }> = ({ error }) => (
     <TrackSection name={SectionName.EMPTY_RESULTS_TABLE}>
         <div style={{ padding: '50px 0' }}>
-            <NonIdealState icon="error" description={error} />
+            <SuboptimalState icon={IconAlertCircle} description={error} />
         </div>
     </TrackSection>
 );
@@ -19,7 +23,7 @@ const ResultsIdleState: FC<React.ComponentProps<typeof RunSqlQueryButton>> = (
 ) => (
     <TrackSection name={SectionName.EMPTY_RESULTS_TABLE}>
         <div style={{ padding: '50px 0' }}>
-            <NonIdealState
+            <SuboptimalState
                 description="Click run query to see your results"
                 action={<RunSqlQueryButton {...props} />}
             />
@@ -29,43 +33,45 @@ const ResultsIdleState: FC<React.ComponentProps<typeof RunSqlQueryButton>> = (
 
 const SqlRunnerResultsTable: FC<{
     onSubmit: () => void;
+    fieldsMap: Record<string, Field>;
+    resultsData: ApiQueryResults | undefined;
     sqlQueryMutation: ReturnType<typeof useSqlQueryMutation>;
-}> = ({ onSubmit, sqlQueryMutation: { isIdle, isLoading, data, error } }) => {
-    const [columnsOrder, setColumnsOrder] = useState<string[]>([]);
-
-    const dataColumns = useMemo(() => {
-        if (data && data.rows.length > 0) {
-            return Object.keys(data.rows[0]).map((key) => ({
-                Header: key,
-                accessor: key,
-                type: 'dimension',
-                Cell: ({ value }: any) => {
-                    if (value === null) return '∅';
-                    if (value === undefined) return '-';
-                    if (value instanceof Date) return value.toISOString();
-                    return `${value}`;
-                },
-            }));
-        }
-        return [];
-    }, [data]);
+}> = ({
+    onSubmit,
+    fieldsMap,
+    resultsData,
+    sqlQueryMutation: { status, error },
+}) => {
+    const columns = useSqlRunnerColumns({
+        resultsData,
+        fieldsMap,
+    });
 
     if (error) {
         return <ResultsErrorState error={error.error.message} />;
     }
 
+    const IdleState = () => (
+        <ResultsIdleState onSubmit={onSubmit} isLoading={false} />
+    );
+
     return (
-        <Table
-            data={data?.rows || []}
-            dataColumns={dataColumns}
-            loading={isLoading}
-            idle={isIdle}
-            dataColumnOrder={columnsOrder}
-            onColumnOrderChange={setColumnsOrder}
-            idleState={
-                <ResultsIdleState onSubmit={onSubmit} isLoading={isLoading} />
-            }
-        />
+        <TrackSection name={SectionName.RESULTS_TABLE}>
+            <Box px="xs" pt="sm">
+                <Table
+                    status={status}
+                    data={resultsData?.rows || []}
+                    columns={columns}
+                    idleState={IdleState}
+                    pagination={{
+                        show: true,
+                    }}
+                    footer={{
+                        show: true,
+                    }}
+                />
+            </Box>
+        </TrackSection>
     );
 };
 

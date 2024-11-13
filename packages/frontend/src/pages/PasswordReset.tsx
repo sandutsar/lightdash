@@ -1,155 +1,135 @@
 import {
+    Anchor,
     Button,
     Card,
-    Colors,
-    H2,
-    Intent,
-    NonIdealState,
-} from '@blueprintjs/core';
-import React, { FC } from 'react';
-import { useForm } from 'react-hook-form';
-import { Redirect, useParams } from 'react-router-dom';
-import AnchorLink from '../components/common/AnchorLink/index';
-import LinkButton from '../components/common/LinkButton';
+    Center,
+    Image,
+    PasswordInput,
+    Stack,
+    Text,
+    Title,
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { type FC } from 'react';
+import { Link, useHistory, useParams } from 'react-router-dom';
+
+import ErrorState from '../components/common/ErrorState';
 import Page from '../components/common/Page/Page';
 import PageSpinner from '../components/PageSpinner';
-import Form from '../components/ReactHookForm/Form';
-import PasswordInput from '../components/ReactHookForm/PasswordInput';
 import {
     usePasswordResetLink,
     usePasswordResetMutation,
 } from '../hooks/usePasswordReset';
 import { useApp } from '../providers/AppProvider';
+import LightdashLogo from '../svgs/lightdash-black.svg';
 
 type ResetPasswordForm = { password: string };
 
 const PasswordReset: FC = () => {
+    const history = useHistory();
     const { code } = useParams<{ code: string }>();
     const { health } = useApp();
-    const { isLoading, error } = usePasswordResetLink(code);
-    const resetMutation = usePasswordResetMutation();
-    const methods = useForm<ResetPasswordForm>({
-        mode: 'onSubmit',
+    const { isInitialLoading, error } = usePasswordResetLink(code);
+    const passwordResetMutation = usePasswordResetMutation();
+
+    const form = useForm<ResetPasswordForm>({
+        initialValues: {
+            password: '',
+        },
     });
 
-    const handleSubmit = (data: ResetPasswordForm) => {
-        resetMutation.mutate({
-            code,
-            newPassword: data.password,
-        });
-    };
-
-    if (health.isLoading || isLoading) {
+    if (health.isInitialLoading || isInitialLoading) {
         return <PageSpinner />;
     }
 
-    if (health.status === 'success' && health.data?.isAuthenticated) {
-        return <Redirect to={{ pathname: '/' }} />;
-    }
-
     return (
-        <Page isFullHeight>
-            <div
-                style={{
-                    width: '400px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    flex: 1,
-                }}
-            >
-                <Card
-                    style={{
-                        padding: 25,
-                        display: 'flex',
-                        flexDirection: 'column',
-                    }}
-                    elevation={2}
-                >
+        <Page title="Reset password" withCenteredContent withNavbar={false}>
+            {/* FIXME: use Mantine sizes for width */}
+            <Stack w={400} mt="4xl">
+                <Image
+                    src={LightdashLogo}
+                    alt="lightdash logo"
+                    width={130}
+                    mx="auto"
+                    my="lg"
+                />
+                <Card p="xl" radius="xs" withBorder shadow="xs">
                     {error ? (
-                        <NonIdealState
-                            title={error.error.message}
-                            icon="error"
-                        />
+                        <ErrorState error={error.error} hasMarginTop={false} />
                     ) : (
                         <>
-                            {!resetMutation.isSuccess ? (
+                            {!passwordResetMutation.isSuccess ? (
                                 <>
-                                    <H2 style={{ marginBottom: 25 }}>
-                                        Reset password
-                                    </H2>
-                                    <Form
-                                        name="password_reset"
-                                        methods={methods}
-                                        onSubmit={handleSubmit}
+                                    <Title order={3} ta="center" mb="md">
+                                        Reset your password
+                                    </Title>
+                                    <form
+                                        name="password-reset"
+                                        onSubmit={form.onSubmit(
+                                            ({ password }) =>
+                                                passwordResetMutation.mutate({
+                                                    code,
+                                                    newPassword: password,
+                                                }),
+                                        )}
                                     >
-                                        <PasswordInput
-                                            label="New password"
-                                            name="password"
-                                            placeholder="Enter your new password..."
-                                            disabled={resetMutation.isLoading}
-                                            rules={{
-                                                required: 'Required field',
-                                            }}
-                                        />
-                                        <div
-                                            style={{
-                                                marginTop: 20,
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                            }}
-                                        >
-                                            <AnchorLink href="/login">
-                                                Cancel
-                                            </AnchorLink>
+                                        <Stack spacing="lg">
+                                            <PasswordInput
+                                                label="Password"
+                                                name="password"
+                                                placeholder="Enter a new password"
+                                                disabled={
+                                                    passwordResetMutation.isLoading
+                                                }
+                                                required
+                                                {...form.getInputProps(
+                                                    'password',
+                                                )}
+                                            />
+
                                             <Button
                                                 type="submit"
-                                                intent={Intent.PRIMARY}
-                                                text="Save"
                                                 loading={
-                                                    resetMutation.isLoading
+                                                    passwordResetMutation.isLoading
                                                 }
-                                            />
-                                        </div>
-                                    </Form>
+                                            >
+                                                Save
+                                            </Button>
+
+                                            <Center>
+                                                <Anchor
+                                                    component={Link}
+                                                    to="/login"
+                                                >
+                                                    Cancel
+                                                </Anchor>
+                                            </Center>
+                                        </Stack>
+                                    </form>
                                 </>
                             ) : (
                                 <>
-                                    <H2 style={{ marginBottom: 25 }}>
-                                        Success! ✅
-                                    </H2>
-                                    <p
-                                        style={{
-                                            color: Colors.GRAY1,
-                                            marginBottom: 20,
-                                            lineHeight: 1.46,
-                                        }}
-                                    >
+                                    <Title order={3} ta="center" mb="md">
+                                        Success!
+                                    </Title>
+                                    <Text ta="center" mb="lg" color="dimmed">
                                         Your password has been successfully
-                                        updated. Use your new password to log
-                                        in.
-                                    </p>
-                                    <div
-                                        style={{
-                                            marginTop: 20,
-                                            display: 'flex',
-                                            justifyContent: 'flex-end',
-                                        }}
+                                        updated.
+                                        <br /> Use your new password to log in.
+                                    </Text>
+
+                                    <Button
+                                        fullWidth
+                                        onClick={() => history.push('/login')}
                                     >
-                                        <LinkButton
-                                            href="/login"
-                                            intent={Intent.PRIMARY}
-                                        >
-                                            Log in
-                                        </LinkButton>
-                                    </div>
+                                        Log in
+                                    </Button>
                                 </>
                             )}
                         </>
                     )}
                 </Card>
-            </div>
+            </Stack>
         </Page>
     );
 };

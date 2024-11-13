@@ -1,35 +1,29 @@
-import { AnchorButton } from '@blueprintjs/core';
-import React from 'react';
-import {
-    Content,
-    DarkLogo,
-    Icon,
-    MobileFooter,
-    MobileViewWrapper,
-    Text,
-} from './Mobile.styles';
+import { Box, Image, Stack, Text, Title } from '@mantine/core';
+import LightdashLogo from '../../svgs/lightdash-black.svg';
+import MantineLinkButton from '../common/MantineLinkButton';
 
 const MobileView = () => (
-    <MobileViewWrapper>
-        <Content>
-            <DarkLogo title="Home" />
-            <Icon>&#128586;</Icon>
-            <Text>Lightdash currently works best on bigger screens.</Text>
-            <Text>Sign in on a laptop or desktop to get started!</Text>
-        </Content>
-
-        <MobileFooter>
-            <AnchorButton
-                href="https://github.com/lightdash/lightdash/discussions"
-                target="_blank"
-                minimal
-                icon="chat"
-                style={{ margin: '0' }}
+    <Box w="100vw" h="100vh" sx={{ background: '#ebf1f5' }}>
+        <Stack align="center" spacing="xl" justify="start" p="5xl">
+            <Image src={LightdashLogo} alt="lightdash logo" maw="8xl" my="lg" />
+            <Box
+                component="span"
+                sx={{
+                    fontSize: '2.5rem',
+                    display: 'block',
+                }}
             >
-                Join the conversation!
-            </AnchorButton>
-        </MobileFooter>
-    </MobileViewWrapper>
+                &#128586;
+            </Box>
+            <Title ta="center" order={4}>
+                This page is not available to view on mobile yet.
+            </Title>
+            <Text ta="center" color="gray.6">
+                Sign in on a laptop or desktop to access this page!
+            </Text>
+            <MantineLinkButton href="/">Back to home page</MantineLinkButton>
+        </Stack>
+    </Box>
 );
 
 export default MobileView;

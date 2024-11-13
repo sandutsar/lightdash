@@ -1,137 +1,236 @@
-import { Button, Divider, H3, MenuDivider, MenuItem } from '@blueprintjs/core';
+import { subject } from '@casl/ability';
 import {
-    AdditionalMetric,
-    CompiledTable,
-    extractEntityNameFromIdColumn,
-    MetricType,
-} from 'common';
-import React, { useEffect } from 'react';
+    convertFieldRefToFieldId,
+    ExploreType,
+    getAllReferences,
+    getItemId,
+    getVisibleFields,
+    isCustomBinDimension,
+    isCustomSqlDimension,
+} from '@lightdash/common';
+import { ActionIcon, Group, Menu, Skeleton, Stack, Text } from '@mantine/core';
+import { IconDots, IconPencil, IconTrash } from '@tabler/icons-react';
+import { memo, useMemo, useState, useTransition, type FC } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+    DeleteVirtualViewModal,
+    EditVirtualViewModal,
+} from '../../../features/virtualView';
 import { useExplore } from '../../../hooks/useExplore';
-import { useExplorer } from '../../../providers/ExplorerProvider';
-import ExploreTree from '../../ExploreTree';
-import { LineageButton } from '../../LineageButton';
-import {
-    ContentWrapper,
-    LoadingStateWrapper,
-    PanelTitleWrapper,
-    TableTitle,
-} from './ExplorePanel.styles';
+import { useApp } from '../../../providers/AppProvider';
+import { useExplorerContext } from '../../../providers/ExplorerProvider';
+import MantineIcon from '../../common/MantineIcon';
+import PageBreadcrumbs from '../../common/PageBreadcrumbs';
+import ExploreTree from '../ExploreTree';
+import { ItemDetailProvider } from '../ExploreTree/TableTree/ItemDetailContext';
 
-const getTableMagicMetrics = (
-    table: CompiledTable,
-): Record<string, AdditionalMetric> =>
-    Object.values(table.dimensions).reduce((previous, dimension) => {
-        const entityName = extractEntityNameFromIdColumn(dimension.name);
-        if (entityName === null) {
-            return previous;
-        }
-        const magicMetric: AdditionalMetric = {
-            name: `${dimension.name}_count_distinct`,
-            label: `Count distinct of ${dimension.label}`,
-            description: `Count distinct of ${dimension.label} on the table ${dimension.tableLabel}. Lightdash has created this metric automatically.`,
-            table: dimension.table,
-            sql: dimension.sql,
-            type: MetricType.COUNT_DISTINCT,
-        };
-        return { ...previous, [magicMetric.name]: magicMetric };
-    }, {});
+const LoadingSkeleton = () => (
+    <Stack>
+        <Skeleton h="md" />
 
-const SideBarLoadingState = () => (
-    <LoadingStateWrapper large>
-        {[0, 1, 2, 3, 4].map((idx) => (
-            <React.Fragment key={idx}>
-                <MenuItem className="bp4-skeleton" />
-                <MenuDivider />
-            </React.Fragment>
-        ))}
-    </LoadingStateWrapper>
+        <Skeleton h="xxl" />
+
+        <Stack spacing="xxs">
+            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => (
+                <Skeleton key={index} h="xxl" />
+            ))}
+        </Stack>
+    </Stack>
 );
 
-type ExplorePanelProps = {
-    onBack: () => void;
-};
-export const ExplorerPanel = ({ onBack }: ExplorePanelProps) => {
-    const {
-        state: {
-            activeFields,
-            unsavedChartVersion: { tableName: activeTableName },
-        },
-        actions: { toggleActiveField, setMagicMetrics },
-    } = useExplorer();
-    const { data, status } = useExplore(activeTableName);
+interface ExplorePanelProps {
+    onBack?: () => void;
+}
 
-    useEffect(() => {
-        if (data) {
-            setMagicMetrics(
-                Object.values(data.tables).reduce<AdditionalMetric[]>(
-                    (sum, table) => {
-                        const hasMetrics =
-                            Object.values(table.metrics).length > 0;
-                        return hasMetrics
-                            ? [...sum]
-                            : [
-                                  ...sum,
-                                  ...Object.values(getTableMagicMetrics(table)),
-                              ];
-                    },
-                    [],
-                ),
+const ExplorePanel: FC<ExplorePanelProps> = memo(({ onBack }) => {
+    const [isEditVirtualViewOpen, setIsEditVirtualViewOpen] = useState(false);
+    const [isDeleteVirtualViewOpen, setIsDeleteVirtualViewOpen] =
+        useState(false);
+    const [, startTransition] = useTransition();
+
+    const { projectUuid } = useParams<{ projectUuid: string }>();
+    const activeTableName = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.tableName,
+    );
+    const additionalMetrics = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.additionalMetrics,
+    );
+    const dimensions = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.metricQuery.dimensions,
+    );
+    const customDimensions = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.customDimensions,
+    );
+    const metrics = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.metricQuery.metrics,
+    );
+    const activeFields = useExplorerContext(
+        (context) => context.state.activeFields,
+    );
+    const toggleActiveField = useExplorerContext(
+        (context) => context.actions.toggleActiveField,
+    );
+    const { data: explore, status } = useExplore(activeTableName);
+
+    const { user } = useApp();
+    const canManageVirtualViews = user.data?.ability?.can(
+        'manage',
+        subject('VirtualView', {
+            organizationUuid: user.data?.organizationUuid,
+            projectUuid,
+        }),
+    );
+
+    const missingFields = useMemo(() => {
+        if (explore) {
+            const visibleFields = getVisibleFields(explore);
+
+            const allFields = [
+                ...visibleFields,
+                ...(additionalMetrics || []),
+                ...(customDimensions || []),
+            ];
+            const selectedFields = [...metrics, ...dimensions];
+            const fieldIds = allFields.map((field) => getItemId(field));
+
+            const missingCustomMetrics = additionalMetrics?.filter((metric) => {
+                const table = explore.tables[metric.table];
+                return (
+                    !table ||
+                    (metric.baseDimensionName &&
+                        !table.dimensions[metric.baseDimensionName])
+                );
+            });
+
+            const missingCustomDimensions = customDimensions?.filter(
+                (customDimension) => {
+                    const isCustomBinDimensionMissing =
+                        isCustomBinDimension(customDimension) &&
+                        !fieldIds.includes(customDimension.dimensionId);
+
+                    const isCustomSqlDimensionMissing =
+                        isCustomSqlDimension(customDimension) &&
+                        getAllReferences(customDimension.sql)
+                            .map((ref) => convertFieldRefToFieldId(ref))
+                            .some(
+                                (refFieldId) => !fieldIds.includes(refFieldId),
+                            );
+
+                    return (
+                        isCustomBinDimensionMissing ||
+                        isCustomSqlDimensionMissing
+                    );
+                },
             );
+
+            return {
+                all: selectedFields.filter((node) => !fieldIds.includes(node)),
+                customMetrics: missingCustomMetrics,
+                customDimensions: missingCustomDimensions,
+            };
         }
-    }, [data, setMagicMetrics]);
+    }, [explore, additionalMetrics, metrics, dimensions, customDimensions]);
 
     if (status === 'loading') {
-        return <SideBarLoadingState />;
+        return <LoadingSkeleton />;
     }
 
-    if (data) {
-        const activeExplore = data;
-        const [databaseName, schemaName, tableName] = activeExplore.tables[
-            activeExplore.baseTable
-        ].sqlTable
-            .replace(/["'`]/g, '')
-            .split('.');
-        return (
-            <>
-                <PanelTitleWrapper>
-                    <Button onClick={onBack} icon="chevron-left" />
-                    <H3 style={{ marginBottom: 0, marginLeft: '10px' }}>
-                        {data.label}
-                    </H3>
-                </PanelTitleWrapper>
-                <Divider />
-                <ContentWrapper>
-                    <TableTitle>
-                        <b>Table</b>: {tableName}
-                    </TableTitle>
-                    <LineageButton />
-                </ContentWrapper>
-                <p>
-                    <b>Schema</b>: {schemaName}
-                </p>
-                <p>
-                    <b>Database</b>: {databaseName}
-                </p>
-                <p>
-                    <b>Description</b>:{' '}
-                    {activeExplore.tables[activeExplore.baseTable].description}
-                </p>
-                <div style={{ paddingBottom: '5px' }} />
-                <Divider />
-                <div style={{ paddingBottom: '10px' }} />
-                <ExploreTree
-                    explore={activeExplore}
-                    selectedNodes={activeFields}
-                    onSelectedFieldChange={toggleActiveField}
-                />
-            </>
-        );
-    }
+    if (!explore) return null;
+
     if (status === 'error') {
-        onBack();
+        if (onBack) onBack();
         return null;
     }
-    return <span>Cannot load explore</span>;
-};
 
-export default ExplorerPanel;
+    return (
+        <>
+            <Group position="apart">
+                <PageBreadcrumbs
+                    size="md"
+                    items={[
+                        ...(onBack
+                            ? [
+                                  {
+                                      title: 'Tables',
+                                      onClick: onBack,
+                                  },
+                              ]
+                            : []),
+                        {
+                            title: explore.label,
+                            active: true,
+                        },
+                    ]}
+                />
+                {canManageVirtualViews && explore.type === ExploreType.VIRTUAL && (
+                    <Menu withArrow offset={-2}>
+                        <Menu.Target>
+                            <ActionIcon variant="transparent">
+                                <MantineIcon icon={IconDots} />
+                            </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                            <Menu.Item
+                                icon={<MantineIcon icon={IconPencil} />}
+                                onClick={() => {
+                                    startTransition(() => {
+                                        setIsEditVirtualViewOpen(true);
+                                    });
+                                }}
+                            >
+                                <Text fz="xs" fw={500}>
+                                    Edit virtual view
+                                </Text>
+                            </Menu.Item>
+                            <Menu.Item
+                                icon={<MantineIcon icon={IconTrash} />}
+                                color="red"
+                                onClick={() => {
+                                    setIsDeleteVirtualViewOpen(true);
+                                }}
+                            >
+                                <Text fz="xs" fw={500}>
+                                    Delete
+                                </Text>
+                            </Menu.Item>
+                        </Menu.Dropdown>
+                    </Menu>
+                )}
+            </Group>
+
+            <ItemDetailProvider>
+                <ExploreTree
+                    explore={explore}
+                    additionalMetrics={additionalMetrics || []}
+                    selectedNodes={activeFields}
+                    onSelectedFieldChange={toggleActiveField}
+                    customDimensions={customDimensions}
+                    selectedDimensions={dimensions}
+                    missingFields={missingFields}
+                />
+            </ItemDetailProvider>
+
+            {isEditVirtualViewOpen && (
+                <EditVirtualViewModal
+                    opened={isEditVirtualViewOpen}
+                    onClose={() => setIsEditVirtualViewOpen(false)}
+                    activeTableName={activeTableName}
+                    setIsEditVirtualViewOpen={setIsEditVirtualViewOpen}
+                    explore={explore}
+                />
+            )}
+            {isDeleteVirtualViewOpen && (
+                <DeleteVirtualViewModal
+                    opened={isDeleteVirtualViewOpen}
+                    onClose={() => setIsDeleteVirtualViewOpen(false)}
+                    virtualViewName={activeTableName}
+                    projectUuid={projectUuid}
+                />
+            )}
+        </>
+    );
+});
+
+export default ExplorePanel;

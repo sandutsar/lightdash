@@ -1,259 +1,71 @@
-import { Colors, HotkeysProvider } from '@blueprintjs/core';
-import '@blueprintjs/core/lib/css/blueprint.css';
-import '@blueprintjs/popover2/lib/css/blueprint-popover2.css';
-import '@blueprintjs/table/lib/css/table.css';
-import React from 'react';
-import { QueryClient, QueryClientProvider } from 'react-query';
-import {
-    BrowserRouter as Router,
-    Redirect,
-    Route,
-    Switch,
-} from 'react-router-dom';
-import './App.css';
-import AppStyle from './App.styles';
-import AppRoute from './components/AppRoute';
-import { Intercom } from './components/Intercom';
-import MobileView from './components/Mobile';
-import NavBar from './components/NavBar';
-import PrivateRoute from './components/PrivateRoute';
-import JobDetailsDrawer from './components/RefreshServer/JobDetailsDrawer';
-import UserCompletionModal from './components/UserCompletionModal';
-import CreateProject from './pages/CreateProject';
-import CreateProjectSettings from './pages/CreateProjectSettings';
-import Dashboard from './pages/Dashboard';
-import Explorer from './pages/Explorer';
-import Home from './pages/Home';
-import Login from './pages/Login';
-import PasswordRecovery from './pages/PasswordRecovery';
-import PasswordReset from './pages/PasswordReset';
-import { Projects } from './pages/Projects';
-import ProjectSettings from './pages/ProjectSettings';
-import Register from './pages/Register';
-import SavedDashboards from './pages/SavedDashboards';
-import SavedExplorer from './pages/SavedExplorer';
-import SavedQueries from './pages/SavedQueries';
-import Signup from './pages/Signup';
-import SqlRunner from './pages/SqlRunner';
-import Welcome from './pages/Welcome';
+import { Ability } from '@casl/ability';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { Helmet } from 'react-helmet';
+import { BrowserRouter as Router } from 'react-router-dom';
+import { AbilityContext } from './components/common/Authorization';
+import VersionAutoUpdater from './components/VersionAutoUpdater/VersionAutoUpdater';
+import { ErrorBoundary } from './features/errorBoundary';
+import { ChartColorMappingContextProvider } from './hooks/useChartColorConfig';
+import MobileRoutes from './MobileRoutes';
+import { ActiveJobProvider } from './providers/ActiveJobProvider';
 import { AppProvider } from './providers/AppProvider';
-import { DashboardProvider } from './providers/DashboardProvider';
-import { TrackingProvider, TrackPage } from './providers/TrackingProvider';
-import { PageName } from './types/Events';
+import MantineProvider from './providers/MantineProvider';
+import ReactQueryProvider from './providers/ReactQueryProvider';
+import ThirdPartyProvider from './providers/ThirdPartyServicesProvider';
+import { TrackingProvider } from './providers/TrackingProvider';
+import Routes from './Routes';
 
-const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            refetchOnWindowFocus: false,
-            onError: async (result) => {
-                // @ts-ignore
-                const { error: { statusCode } = {} } = result;
-                if (statusCode === 401) {
-                    await queryClient.invalidateQueries('health');
-                }
-            },
-        },
-    },
-});
+const defaultAbility = new Ability();
 
-const isMobile =
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-    ) || window.innerWidth < 768;
+// const isMobile =
+//     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+//         navigator.userAgent,
+//     ) || window.innerWidth < 768;
+
+const isMobile = window.innerWidth < 768;
+
+const isMinimalPage = window.location.pathname.startsWith('/minimal');
 
 const App = () => (
     <>
-        <AppStyle />
-        <QueryClientProvider client={queryClient}>
-            <HotkeysProvider>
-                <AppProvider>
-                    <TrackingProvider>
-                        {isMobile ? (
-                            <MobileView />
-                        ) : (
-                            <Router>
-                                <Intercom />
-                                <Switch>
-                                    <Route path="/welcome">
-                                        <TrackPage name={PageName.WELCOME}>
-                                            <Welcome />
-                                        </TrackPage>
-                                    </Route>
-                                    <Route path="/register">
-                                        <TrackPage name={PageName.REGISTER}>
-                                            <Register />
-                                        </TrackPage>
-                                    </Route>
-                                    <Route path="/login">
-                                        <TrackPage name={PageName.LOGIN}>
-                                            <Login />
-                                        </TrackPage>
-                                    </Route>
-                                    <Route path="/recover-password">
-                                        <TrackPage
-                                            name={PageName.PASSWORD_RECOVERY}
-                                        >
-                                            <PasswordRecovery />
-                                        </TrackPage>
-                                    </Route>
-                                    <Route path="/reset-password/:code">
-                                        <TrackPage
-                                            name={PageName.PASSWORD_RESET}
-                                        >
-                                            <PasswordReset />
-                                        </TrackPage>
-                                    </Route>
-                                    <Route path="/invite/:inviteCode">
-                                        <TrackPage name={PageName.SIGNUP}>
-                                            <Signup />
-                                        </TrackPage>
-                                    </Route>
-                                    <PrivateRoute path="/">
-                                        <div
-                                            style={{
-                                                minHeight: '100vh',
-                                                background: Colors.LIGHT_GRAY5,
-                                            }}
-                                        >
-                                            <UserCompletionModal />
-                                            <Switch>
-                                                <Route path="/createProject">
-                                                    <NavBar />
-                                                    <TrackPage
-                                                        name={
-                                                            PageName.CREATE_PROJECT
-                                                        }
-                                                    >
-                                                        <CreateProject />
-                                                    </TrackPage>
-                                                </Route>
-                                                <Route path="/createProjectSettings/:projectUuid">
-                                                    <NavBar />
-                                                    <TrackPage
-                                                        name={
-                                                            PageName.CREATE_PROJECT_SETTINGS
-                                                        }
-                                                    >
-                                                        <CreateProjectSettings />
-                                                    </TrackPage>
-                                                </Route>
-                                                <AppRoute path="/">
-                                                    <Switch>
-                                                        <Route path="/projects/:projectUuid/settings/:tab?">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.PROJECT_SETTINGS
-                                                                }
-                                                            >
-                                                                <ProjectSettings />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/saved/:savedQueryUuid">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.SAVED_QUERY_EXPLORER
-                                                                }
-                                                            >
-                                                                <SavedExplorer />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/saved">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.SAVED_QUERIES
-                                                                }
-                                                            >
-                                                                <SavedQueries />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/dashboards/:dashboardUuid/:mode?">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.DASHBOARD
-                                                                }
-                                                            >
-                                                                <DashboardProvider>
-                                                                    <Dashboard />
-                                                                </DashboardProvider>
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/dashboards">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.SAVED_DASHBOARDS
-                                                                }
-                                                            >
-                                                                <SavedDashboards />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/sqlRunner">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.SQL_RUNNER
-                                                                }
-                                                            >
-                                                                <SqlRunner />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/tables/:tableId">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.EXPLORER
-                                                                }
-                                                            >
-                                                                <Explorer />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route path="/projects/:projectUuid/tables">
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.EXPLORE_TABLES
-                                                                }
-                                                            >
-                                                                <Explorer />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route
-                                                            path="/projects/:projectUuid/home"
-                                                            exact
-                                                        >
-                                                            <NavBar />
-                                                            <TrackPage
-                                                                name={
-                                                                    PageName.HOME
-                                                                }
-                                                            >
-                                                                <Home />
-                                                            </TrackPage>
-                                                        </Route>
-                                                        <Route
-                                                            path="/projects/:projectUuid?"
-                                                            exact
-                                                        >
-                                                            <Projects />
-                                                        </Route>
-                                                        <Redirect to="/projects" />
-                                                    </Switch>
-                                                </AppRoute>
-                                            </Switch>
-                                        </div>
-                                    </PrivateRoute>
-                                </Switch>
-                                <JobDetailsDrawer />
-                            </Router>
-                        )}
-                    </TrackingProvider>
-                </AppProvider>
-            </HotkeysProvider>
-        </QueryClientProvider>
+        <Helmet>
+            <title>Lightdash</title>
+        </Helmet>
+
+        <ReactQueryProvider>
+            <MantineProvider>
+                <Router>
+                    <AppProvider>
+                        <VersionAutoUpdater />
+                        <ThirdPartyProvider
+                            enabled={isMobile || !isMinimalPage}
+                        >
+                            <ErrorBoundary wrapper={{ mt: '4xl' }}>
+                                <TrackingProvider
+                                    enabled={isMobile || !isMinimalPage}
+                                >
+                                    <AbilityContext.Provider
+                                        value={defaultAbility}
+                                    >
+                                        <ActiveJobProvider>
+                                            <ChartColorMappingContextProvider>
+                                                {isMobile ? (
+                                                    <MobileRoutes />
+                                                ) : (
+                                                    <Routes />
+                                                )}
+                                            </ChartColorMappingContextProvider>
+                                        </ActiveJobProvider>
+                                    </AbilityContext.Provider>
+                                </TrackingProvider>
+                            </ErrorBoundary>
+                        </ThirdPartyProvider>
+                    </AppProvider>
+                </Router>
+            </MantineProvider>
+
+            <ReactQueryDevtools initialIsOpen={false} />
+        </ReactQueryProvider>
     </>
 );
 

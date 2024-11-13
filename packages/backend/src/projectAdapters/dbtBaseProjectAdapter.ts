@@ -1,7 +1,7 @@
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
-import { AnyValidateFunction } from 'ajv/dist/types';
 import {
+    attachTypesToModels,
+    convertExplores,
+    DbtManifestVersion,
     DbtMetric,
     DbtModelNode,
     DbtPackages,
@@ -9,56 +9,21 @@ import {
     Explore,
     ExploreError,
     friendlyName,
+    GetDbtManifestVersion,
+    getSchemaStructureFromDbtModels,
     InlineError,
     InlineErrorType,
     isSupportedDbtAdapter,
+    ManifestValidator,
     MissingCatalogEntryError,
+    normaliseModelDatabase,
     ParseError,
     SupportedDbtAdapter,
-} from 'common';
-import {
-    attachTypesToModels,
-    convertExplores,
-    getSchemaStructureFromDbtModels,
-    normaliseModelDatabase,
-} from '../dbt/translator';
-import Logger from '../logger';
-import dbtManifestSchema from '../manifestv4.json';
-import lightdashDbtSchema from '../schema.json';
-import {
-    CachedWarehouse,
-    DbtClient,
-    ProjectAdapter,
-    WarehouseClient,
-} from '../types';
-
-const ajv = new Ajv({ schemas: [lightdashDbtSchema, dbtManifestSchema] });
-addFormats(ajv);
-
-const getModelValidator = () => {
-    const modelValidator = ajv.getSchema<DbtRawModelNode>(
-        'https://schemas.lightdash.com/dbt/manifest/v4.json#/definitions/LightdashCompiledModelNode',
-    );
-    if (modelValidator === undefined) {
-        throw new ParseError('Could not parse Lightdash schema.');
-    }
-    return modelValidator;
-};
-
-const getMetricValidator = () => {
-    const metricValidator = ajv.getSchema<DbtMetric>(
-        'https://schemas.getdbt.com/dbt/manifest/v4.json#/definitions/ParsedMetric',
-    );
-    if (metricValidator === undefined) {
-        throw new ParseError('Could not parse dbt schema.');
-    }
-    return metricValidator;
-};
-
-const formatAjvErrors = (validator: AnyValidateFunction): string =>
-    (validator.errors || [])
-        .map((err) => `Field at "${err.instancePath}" ${err.message}`)
-        .join('\n');
+    SupportedDbtVersions,
+} from '@lightdash/common';
+import { WarehouseClient } from '@lightdash/warehouses';
+import Logger from '../logging/logger';
+import { CachedWarehouse, DbtClient, ProjectAdapter } from '../types';
 
 export class DbtBaseProjectAdapter implements ProjectAdapter {
     dbtClient: DbtClient;
@@ -67,14 +32,18 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
 
     cachedWarehouse: CachedWarehouse;
 
+    dbtVersion: SupportedDbtVersions;
+
     constructor(
         dbtClient: DbtClient,
         warehouseClient: WarehouseClient,
         cachedWarehouse: CachedWarehouse,
+        dbtVersion: SupportedDbtVersions,
     ) {
         this.dbtClient = dbtClient;
         this.warehouseClient = warehouseClient;
         this.cachedWarehouse = cachedWarehouse;
+        this.dbtVersion = dbtVersion;
     }
 
     // eslint-disable-next-line class-methods-use-this
@@ -102,7 +71,9 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
     ): Promise<(Explore | ExploreError)[]> {
         Logger.debug('Install dependencies');
         // Install dependencies for dbt and fetch the manifest - may raise error meaning no explores compile
-        await this.dbtClient.installDeps();
+        if (this.dbtClient.installDeps !== undefined) {
+            await this.dbtClient.installDeps();
+        }
         Logger.debug('Get dbt manifest');
         const { manifest } = await this.dbtClient.getDbtManifest();
 
@@ -117,15 +88,30 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
 
         // Validate models in the manifest - models with invalid metadata will compile to failed Explores
         const models = Object.values(manifest.nodes).filter(
-            (node) => node.resource_type === 'model',
+            (node: any) => node.resource_type === 'model' && node.meta, // check that node.meta exists
         ) as DbtRawModelNode[];
-        Logger.debug(`Validate ${models.length} models in manifest`);
+        const manifestVersion = GetDbtManifestVersion(this.dbtVersion);
+        Logger.debug(
+            `Validate ${models.length} models in manifest with version ${manifestVersion}`,
+        );
+
         const [validModels, failedExplores] =
-            DbtBaseProjectAdapter._validateDbtModel(adapterType, models);
+            DbtBaseProjectAdapter._validateDbtModel(
+                adapterType,
+                models,
+                manifestVersion,
+            );
 
         // Validate metrics in the manifest - compile fails if any invalid
         const metrics = DbtBaseProjectAdapter._validateDbtMetrics(
-            Object.values(manifest.metrics),
+            manifestVersion,
+            [
+                DbtManifestVersion.V10,
+                DbtManifestVersion.V11,
+                DbtManifestVersion.V12,
+            ].includes(manifestVersion)
+                ? []
+                : Object.values(manifest.metrics),
         );
 
         // Be lazy and try to attach types to the remaining models without refreshing the catalog
@@ -141,6 +127,7 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                 validModels,
                 this.cachedWarehouse.warehouseCatalog,
                 true,
+                adapterType !== 'snowflake',
             );
             Logger.debug('Convert explores');
             const lazyExplores = await convertExplores(
@@ -148,6 +135,7 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                 loadSources,
                 adapterType,
                 metrics,
+                this.warehouseClient,
             );
             return [...lazyExplores, ...failedExplores];
         } catch (e) {
@@ -155,8 +143,14 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                 Logger.debug(
                     'Get warehouse catalog after missing catalog error',
                 );
+                const modelCatalog =
+                    getSchemaStructureFromDbtModels(validModels);
+                Logger.debug(
+                    `Fetching table metadata for ${modelCatalog.length} tables`,
+                );
+
                 const warehouseCatalog = await this.warehouseClient.getCatalog(
-                    getSchemaStructureFromDbtModels(validModels),
+                    modelCatalog,
                 );
                 await this.cachedWarehouse?.onWarehouseCatalogChange(
                     warehouseCatalog,
@@ -170,6 +164,7 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                     validModels,
                     warehouseCatalog,
                     false,
+                    adapterType !== 'snowflake',
                 );
                 Logger.debug('Convert explores after missing catalog error');
                 const explores = await convertExplores(
@@ -177,6 +172,7 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                     loadSources,
                     adapterType,
                     metrics,
+                    this.warehouseClient,
                 );
                 return [...explores, ...failedExplores];
             }
@@ -184,21 +180,16 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
         }
     }
 
-    public async runQuery(sql: string): Promise<Record<string, any>[]> {
-        Logger.debug(`Run query against warehouse`);
-        // Possible error if query is ran before dependencies are installed
-        return this.warehouseClient.runQuery(sql);
-    }
-
-    static _validateDbtMetrics(metrics: DbtMetric[]): DbtMetric[] {
-        const validator = getMetricValidator();
+    static _validateDbtMetrics(
+        version: DbtManifestVersion,
+        metrics: DbtMetric[],
+    ): DbtMetric[] {
+        const validator = new ManifestValidator(version);
         metrics.forEach((metric) => {
-            const isValid = validator(metric);
+            const [isValid, errorMessage] = validator.isDbtMetricValid(metric);
             if (!isValid) {
                 throw new ParseError(
-                    `Could not parse dbt metric with id ${
-                        metric.unique_id
-                    }: ${formatAjvErrors(validator)}`,
+                    `Could not parse dbt metric with id ${metric.unique_id}: ${errorMessage}`,
                     {},
                 );
             }
@@ -209,17 +200,18 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
     static _validateDbtModel(
         adapterType: SupportedDbtAdapter,
         models: DbtRawModelNode[],
+        manifestVersion: DbtManifestVersion,
     ): [DbtModelNode[], ExploreError[]] {
-        const validator = getModelValidator();
+        const validator = new ManifestValidator(manifestVersion);
         return models.reduce(
             ([validModels, invalidModels], model) => {
                 let error: InlineError | undefined;
                 // Match against json schema
-                const isValid = validator(model);
+                const [isValid, errorMessage] = validator.isModelValid(model);
                 if (!isValid) {
                     error = {
                         type: InlineErrorType.METADATA_PARSE_ERROR,
-                        message: formatAjvErrors(validator),
+                        message: errorMessage,
                     };
                 } else if (
                     isValid &&
@@ -234,7 +226,17 @@ export class DbtBaseProjectAdapter implements ProjectAdapter {
                     const exploreError: ExploreError = {
                         name: model.name,
                         label: model.meta.label || friendlyName(model.name),
-                        errors: [error],
+                        groupLabel: model.meta.group_label,
+                        errors: [
+                            error.type === InlineErrorType.METADATA_PARSE_ERROR
+                                ? {
+                                      ...error,
+                                      message: `${
+                                          model.name ? `${model.name}: ` : ''
+                                      }${error.message}`,
+                                  }
+                                : error,
+                        ],
                     };
                     return [validModels, [...invalidModels, exploreError]];
                 }

@@ -1,15 +1,16 @@
 import {
     BaseJob,
     CreateJob,
+    DbtError,
+    DbtLog,
     Job,
     JobLabels,
     JobStatusType,
     JobStep,
     JobStepStatusType,
     JobStepType,
-    LightdashError,
     NotFoundError,
-} from 'common';
+} from '@lightdash/common';
 import { Knex } from 'knex';
 import {
     DbJobs,
@@ -17,26 +18,15 @@ import {
     JobStepsTableName,
 } from '../../database/entities/jobs';
 
-type JobModelDependencies = {
+type JobModelArguments = {
     database: Knex;
 };
 
 export class JobModel {
     private database: Knex;
 
-    constructor(deps: JobModelDependencies) {
-        this.database = deps.database;
-    }
-
-    async getMostRecentJobByProject(
-        projectUuid: string,
-    ): Promise<Job | undefined> {
-        const [row] = await this.database(JobsTableName)
-            .where('project_uuid', projectUuid)
-            .orderBy('updated_at', 'desc')
-            .limit(1);
-        if (row === undefined) return undefined;
-        return this.convertRowToJob(row);
+    constructor(args: JobModelArguments) {
+        this.database = args.database;
     }
 
     async get(jobUuid: string): Promise<Job> {
@@ -48,6 +38,7 @@ export class JobModel {
             throw new NotFoundError(
                 `job with jobUuid ${jobUuid} does not exist`,
             );
+
         return this.convertRowToJob(row);
     }
 
@@ -57,6 +48,7 @@ export class JobModel {
             createdAt: row.created_at,
             updatedAt: row.updated_at,
             projectUuid: row.project_uuid,
+            userUuid: row.user_uuid,
             jobUuid: row.job_uuid,
             jobStatus: row.job_status,
             steps,
@@ -86,6 +78,7 @@ export class JobModel {
                 stepError: step.step_error,
                 stepLabel,
                 startedAt: step.started_at,
+                stepDbtLogs: step.step_dbt_logs,
             };
         });
     }
@@ -112,6 +105,7 @@ export class JobModel {
             await trx(JobsTableName)
                 .insert({
                     project_uuid: job.projectUuid,
+                    user_uuid: job.userUuid,
                     job_uuid: job.jobUuid,
                     job_type: job.jobType,
                     job_status: job.jobStatus,
@@ -144,12 +138,14 @@ export class JobModel {
         stepStatus: JobStepStatusType,
         stepType: JobStepType,
         stepError?: string,
+        stepDbtLogs?: DbtLog[],
     ): Promise<void> {
         await this.database(JobStepsTableName)
             .update({
                 step_status: stepStatus,
                 updated_at: new Date(),
                 step_error: stepError,
+                step_dbt_logs: JSON.stringify(stepDbtLogs),
             })
             .where('job_uuid', jobUuid)
             .andWhere('step_type', stepType);
@@ -192,21 +188,12 @@ export class JobModel {
             );
             return result;
         } catch (e) {
-            const formatJobErrorMessage = (error: unknown) => {
-                if (error instanceof LightdashError) {
-                    return `${error.name}: ${error.message}${
-                        Object.keys(error.data).length > 0
-                            ? ` \n${JSON.stringify(error.data)}`
-                            : ''
-                    }`;
-                }
-                return `${error}`;
-            };
             await this.updateJobStep(
                 jobUuid,
                 JobStepStatusType.ERROR,
                 jobStepType,
-                formatJobErrorMessage(e),
+                e.message,
+                e instanceof DbtError ? e.logs : [],
             );
             await this.update(jobUuid, { jobStatus: JobStatusType.ERROR });
             throw e; // throw the error again

@@ -1,56 +1,22 @@
+import {
+    getRequestMethod,
+    LightdashRequestMethodHeader,
+} from '@lightdash/common';
 import express from 'express';
 import {
     isAuthenticated,
     unauthorisedInDemo,
 } from '../controllers/authentication';
-import { userModel } from '../models/models';
-import { UserModel } from '../models/UserModel';
-import { userService } from '../services/services';
-import { sanitizeEmailParam, sanitizeStringParam } from '../utils';
 
 export const userRouter = express.Router();
-
-userRouter.get('/', isAuthenticated, async (req, res) => {
-    res.json({
-        status: 'ok',
-        results: UserModel.lightdashUserFromSession(req.user!),
-    });
-});
-
-userRouter.post('/', unauthorisedInDemo, async (req, res, next) => {
-    try {
-        const lightdashUser = await userService.createFromInvite(
-            req.body.inviteCode,
-            {
-                firstName: sanitizeStringParam(req.body.firstName),
-                lastName: sanitizeStringParam(req.body.lastName),
-                email: sanitizeEmailParam(req.body.email),
-                password: sanitizeStringParam(req.body.password),
-            },
-        );
-        const sessionUser = await userModel.findSessionUserByUUID(
-            lightdashUser.userUuid,
-        );
-        req.login(sessionUser, (err) => {
-            if (err) {
-                next(err);
-            }
-            res.json({
-                status: 'ok',
-                results: lightdashUser,
-            });
-        });
-    } catch (e) {
-        next(e);
-    }
-});
 
 userRouter.patch(
     '/me',
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        userService
+        req.services
+            .getUserService()
             .updateUser(req.user!, req.body)
             .then((user) => {
                 res.json({
@@ -62,30 +28,49 @@ userRouter.patch(
     },
 );
 
+userRouter.get('/password', isAuthenticated, async (req, res, next) =>
+    req.services
+        .getUserService()
+        .hasPassword(req.user!)
+        .then((hasPassword: boolean) => {
+            res.json({
+                status: 'ok',
+                results: hasPassword,
+            });
+        })
+        .catch(next),
+);
+
 userRouter.post(
     '/password',
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) =>
-        userService
-            .updatePassword(req.user!.userId, req.user!.userUuid, req.body)
+        req.services
+            .getUserService()
+            .updatePassword(req.user!, req.body)
             .then(() => {
-                req.logout();
-                req.session.save((err) => {
+                req.logout((err) => {
                     if (err) {
-                        next(err);
-                    } else {
-                        res.json({
-                            status: 'ok',
-                        });
+                        return next(err);
                     }
+                    return req.session.save((err2) => {
+                        if (err2) {
+                            next(err2);
+                        } else {
+                            res.json({
+                                status: 'ok',
+                            });
+                        }
+                    });
                 });
             })
             .catch(next),
 );
 
 userRouter.post('/password/reset', unauthorisedInDemo, async (req, res, next) =>
-    userService
+    req.services
+        .getUserService()
         .resetPassword(req.body)
         .then(() => {
             res.json({
@@ -96,7 +81,9 @@ userRouter.post('/password/reset', unauthorisedInDemo, async (req, res, next) =>
 );
 
 userRouter.get('/identities', isAuthenticated, async (req, res, next) => {
-    const identities = await userService.getLinkedIdentities(req.user!);
+    const identities = await req.services
+        .getUserService()
+        .getLinkedIdentities(req.user!);
     res.json({
         status: 'ok',
         results: identities,
@@ -108,7 +95,8 @@ userRouter.delete(
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        userService
+        req.services
+            .getUserService()
             .deleteLinkedIdentity(req.user!, req.body)
             .then(() => {
                 res.json({
@@ -124,7 +112,8 @@ userRouter.patch(
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        userService
+        req.services
+            .getUserService()
             .completeUserSetup(req.user!, req.body)
             .then((results) => {
                 res.json({
@@ -132,6 +121,58 @@ userRouter.patch(
                     results,
                 });
             })
+            .catch(next);
+    },
+);
+
+userRouter.post(
+    '/me/personal-access-tokens',
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        req.services
+            .getPersonalAccessTokenService()
+            .createPersonalAccessToken(
+                req.user!,
+                req.body,
+                getRequestMethod(req.header(LightdashRequestMethodHeader)),
+            )
+            .then((results) => res.json({ status: 'ok', results }))
+            .catch(next);
+    },
+);
+
+userRouter.get(
+    '/me/personal-access-tokens',
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        req.services
+            .getPersonalAccessTokenService()
+            .getAllPersonalAccessTokens(req.user!)
+            .then((results) =>
+                res.json({
+                    status: 'ok',
+                    results,
+                }),
+            )
+            .catch(next);
+    },
+);
+
+userRouter.delete(
+    '/me/personal-access-tokens/:tokenUuid',
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        req.services
+            .getPersonalAccessTokenService()
+            .deletePersonalAccessToken(req.user!, req.params.tokenUuid)
+            .then(() =>
+                res.json({
+                    status: 'ok',
+                }),
+            )
             .catch(next);
     },
 );

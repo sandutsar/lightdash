@@ -1,31 +1,60 @@
-import { Callout, Code, NonIdealState, Pre, Spinner } from '@blueprintjs/core';
-import React from 'react';
-import { useCompliedSql } from '../hooks/useCompiledSql';
+import { Alert, Loader, Stack, Title } from '@mantine/core';
+import { Prism } from '@mantine/prism';
+import { IconAlertCircle } from '@tabler/icons-react';
+import { useCompiledSql } from '../hooks/useCompiledSql';
 
 export const RenderedSql = () => {
-    const { data, error, isLoading } = useCompliedSql();
+    const { data, error, isInitialLoading } = useCompiledSql();
 
-    if (isLoading) {
+    if (isInitialLoading) {
         return (
-            <div style={{ margin: 10 }}>
-                <NonIdealState title="Compiling SQL" icon={<Spinner />} />
-            </div>
+            <Stack my="xs" align="center">
+                <Loader size="lg" color="gray" mt="xs" />
+                <Title order={4} fw={500} color="gray.7">
+                    Compiling SQL
+                </Title>
+            </Stack>
         );
     }
 
-    if (error) {
+    if (error?.error.message) {
         return (
             <div style={{ margin: 10 }}>
-                <Callout intent="danger" title="Compilation error">
+                <Alert
+                    icon={<IconAlertCircle size="1rem" />}
+                    title="Compilation error"
+                    color="red"
+                    variant="filled"
+                >
                     <p>{error.error.message}</p>
-                </Callout>
+                </Alert>
+            </div>
+        );
+    } else if (error?.error.data) {
+        // Validation error
+        return (
+            <div style={{ margin: 10 }}>
+                <Alert
+                    icon={<IconAlertCircle size="1rem" />}
+                    title="Compilation error"
+                    color="red"
+                    variant="filled"
+                >
+                    {Object.entries(error.error.data).map(
+                        ([key, validation]) => {
+                            return (
+                                <p key={key}>{JSON.stringify(validation)}</p>
+                            );
+                        },
+                    )}
+                </Alert>
             </div>
         );
     }
 
     return (
-        <Pre style={{ borderRadius: '0', boxShadow: 'none', overflow: 'auto' }}>
-            <Code>{data || ''}</Code>
-        </Pre>
+        <Prism m="sm" language="sql" withLineNumbers>
+            {data || ''}
+        </Prism>
     );
 };

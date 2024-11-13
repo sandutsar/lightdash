@@ -1,13 +1,22 @@
+import { ExploreType } from '@lightdash/common';
 import knex from 'knex';
 import { getTracker, MockClient, RawQuery, Tracker } from 'knex-mock-client';
 import { FunctionQueryMatcher } from 'knex-mock-client/types/mock-client';
-import { ProjectTableName } from '../../database/entities/projects';
+import isEqual from 'lodash/isEqual';
+import { lightdashConfigMock } from '../../config/lightdashConfig.mock';
+import {
+    CachedExploresTableName,
+    CachedExploreTableName,
+    ProjectTableName,
+} from '../../database/entities/projects';
 import { ProjectModel } from './ProjectModel';
 import {
-    encryptionServiceMock,
+    encryptionUtilMock,
     expectedProject,
     expectedTablesConfiguration,
-    lightdashConfigMock,
+    exploresWithSameName,
+    exploreWithMetricFilters,
+    mockExploreWithOutdatedMetricFilters,
     projectMock,
     projectUuid,
     tableSelectionMock,
@@ -22,7 +31,7 @@ function queryMatcher(
         sql.includes(tableName) &&
         params.length === bindings.length &&
         params.reduce(
-            (valid, arg, index) => valid && bindings[index] === arg,
+            (valid, arg, index) => valid && isEqual(bindings[index], arg),
             true,
         );
 }
@@ -31,7 +40,7 @@ describe('ProjectModel', () => {
     const model = new ProjectModel({
         database: knex({ client: MockClient, dialect: 'pg' }),
         lightdashConfig: lightdashConfigMock,
-        encryptionService: encryptionServiceMock,
+        encryptionUtil: encryptionUtilMock,
     });
     let tracker: Tracker;
     beforeAll(() => {
@@ -46,7 +55,6 @@ describe('ProjectModel', () => {
             .response([projectMock]);
 
         const project = await model.get(projectUuid);
-
         expect(project).toEqual(expectedProject);
         expect(tracker.history.select).toHaveLength(1);
     });
@@ -77,5 +85,64 @@ describe('ProjectModel', () => {
         );
 
         expect(tracker.history.update).toHaveLength(1);
+    });
+
+    describe('should convert outdated metric filters in explores', () => {
+        test('should add fieldRef property when metric filters have fieldId', () => {
+            expect(
+                ProjectModel.convertMetricFiltersFieldIdsToFieldRef(
+                    mockExploreWithOutdatedMetricFilters,
+                ),
+            ).toEqual(exploreWithMetricFilters);
+        });
+        test('should keep fieldRef property when metric filters have fieldRef', () => {
+            expect(
+                ProjectModel.convertMetricFiltersFieldIdsToFieldRef(
+                    exploreWithMetricFilters,
+                ),
+            ).toEqual(exploreWithMetricFilters);
+        });
+    });
+
+    describe('saveExploresToCache', () => {
+        test('should discard explores with duplicate name', async () => {
+            // Mock for selecting custom explores/virtual views
+            tracker.on
+                .select(
+                    queryMatcher(CachedExploreTableName, [
+                        projectUuid,
+                        ExploreType.VIRTUAL,
+                    ]),
+                )
+                .response([]);
+
+            tracker.on
+                .delete(queryMatcher(CachedExploreTableName, [projectUuid]))
+                .response([]);
+            tracker.on
+                .insert(
+                    queryMatcher(CachedExploreTableName, [
+                        JSON.stringify(exploresWithSameName[0]),
+                        exploresWithSameName[0].name,
+                        projectUuid,
+                        [],
+                    ]),
+                )
+                .response([]);
+            tracker.on
+                .insert(
+                    queryMatcher(CachedExploresTableName, [
+                        JSON.stringify([exploresWithSameName[0]]),
+                        projectUuid,
+                    ]),
+                )
+                .response([]);
+
+            await model.saveExploresToCache(projectUuid, exploresWithSameName);
+
+            expect(tracker.history.select).toHaveLength(1);
+            expect(tracker.history.delete).toHaveLength(1);
+            expect(tracker.history.insert).toHaveLength(2);
+        });
     });
 });

@@ -1,45 +1,110 @@
-import { Colors, H1 } from '@blueprintjs/core';
-import React, { FC } from 'react';
+import { useState, type FC } from 'react';
+import { useHistory, useParams } from 'react-router-dom';
 import Page from '../components/common/Page/Page';
 import PageSpinner from '../components/PageSpinner';
-import { CreateProjectConnection } from '../components/ProjectConnection';
+import ConnectManually from '../components/ProjectConnection/ProjectConnectFlow/ConnectManually';
+import ConnectSuccess from '../components/ProjectConnection/ProjectConnectFlow/ConnectSuccess';
+import ConnectUsingCLI from '../components/ProjectConnection/ProjectConnectFlow/ConnectUsingCLI';
+import SelectConnectMethod from '../components/ProjectConnection/ProjectConnectFlow/SelectConnectMethod';
+import SelectWarehouse, {
+    OtherWarehouse,
+    type SelectedWarehouse,
+} from '../components/ProjectConnection/ProjectConnectFlow/SelectWarehouse';
+import UnsupportedWarehouse from '../components/ProjectConnection/ProjectConnectFlow/UnsupportedWarehouse';
+import { ProjectFormProvider } from '../components/ProjectConnection/ProjectFormProvider';
+import { useOrganization } from '../hooks/organization/useOrganization';
+import useSearchParams from '../hooks/useSearchParams';
 import { useApp } from '../providers/AppProvider';
 
+export enum ConnectMethod {
+    CLI = 'cli',
+    MANUAL = 'manual',
+}
+
 const CreateProject: FC = () => {
-    const { health } = useApp();
-    if (health.isLoading) {
+    const history = useHistory();
+    const { isInitialLoading: isLoadingOrganization, data: organization } =
+        useOrganization();
+
+    const {
+        health: { data: health, isInitialLoading: isLoadingHealth },
+    } = useApp();
+
+    const { method } = useParams<{ method: ConnectMethod }>();
+    const projectUuid = useSearchParams('projectUuid');
+
+    const [warehouse, setWarehouse] = useState<SelectedWarehouse>();
+
+    if (isLoadingHealth || !health || isLoadingOrganization || !organization) {
         return <PageSpinner />;
     }
 
+    const isCreatingFirstProject = !!organization.needsProject;
+
     return (
-        <Page>
-            <div
-                style={{
-                    display: 'flex',
-                    width: '800px',
-                    flexDirection: 'column',
-                    flex: 1,
-                    paddingTop: 60,
-                }}
-            >
-                <H1 style={{ marginBottom: 30 }}>Connect your project ⚡</H1>
-                <p style={{ color: Colors.GRAY1, marginBottom: 30 }}>
-                    The following steps are best carried out by your
-                    organization&apos;s data/analytics engineering experts. Once
-                    you set up your dbt and warehouse connection, you will be
-                    ready to start exploring your data in Lightdash! If you are
-                    itching to get started,{' '}
-                    <a
-                        target="_blank"
-                        rel="noreferrer"
-                        href="https://demo.lightdash.com"
-                    >
-                        check out our demo project!
-                    </a>
-                </p>
-                <CreateProjectConnection />
-            </div>
-        </Page>
+        <ProjectFormProvider>
+            <Page title="Create project" withFixedContent withPaddedContent>
+                {method && projectUuid ? (
+                    <ConnectSuccess projectUuid={projectUuid} />
+                ) : (
+                    <>
+                        {!warehouse ? (
+                            <SelectWarehouse
+                                isCreatingFirstProject={isCreatingFirstProject}
+                                onSelect={setWarehouse}
+                            />
+                        ) : warehouse === OtherWarehouse.Other ? (
+                            <UnsupportedWarehouse
+                                onBack={() => {
+                                    setWarehouse(undefined);
+                                    history.replace('/createProject');
+                                }}
+                            />
+                        ) : (
+                            <>
+                                {warehouse && !method && (
+                                    <SelectConnectMethod
+                                        isCreatingFirstProject={
+                                            isCreatingFirstProject
+                                        }
+                                        onSelect={(newMethod) => {
+                                            history.replace(
+                                                `/createProject/${newMethod}`,
+                                            );
+                                        }}
+                                        onBack={() => {
+                                            setWarehouse(undefined);
+                                        }}
+                                    />
+                                )}
+
+                                {warehouse && method === ConnectMethod.CLI && (
+                                    <ConnectUsingCLI
+                                        siteUrl={health.siteUrl}
+                                        version={health.version}
+                                        onBack={() => {
+                                            history.replace('/createProject');
+                                        }}
+                                    />
+                                )}
+
+                                {warehouse && method === ConnectMethod.MANUAL && (
+                                    <ConnectManually
+                                        isCreatingFirstProject={
+                                            isCreatingFirstProject
+                                        }
+                                        selectedWarehouse={warehouse}
+                                        onBack={() => {
+                                            history.replace('/createProject');
+                                        }}
+                                    />
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </Page>
+        </ProjectFormProvider>
     );
 };
 

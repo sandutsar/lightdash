@@ -1,16 +1,17 @@
 // organize-imports-ignore
-import { Ace } from 'ace-builds';
+import { type Ace } from 'ace-builds';
 import 'react-ace'; // Note: we need this import before the langTools import
 import langTools from 'ace-builds/src-noconflict/ext-language_tools';
 import {
     convertAdditionalMetric,
-    Field,
-    fieldId,
+    type Field,
+    getDimensions,
     getFieldRef,
-    Metric,
-} from 'common';
-import { Dispatch, SetStateAction, useEffect, useState } from 'react';
-import { useExplorer } from '../providers/ExplorerProvider';
+    getItemId,
+    type Metric,
+} from '@lightdash/common';
+import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
+import { useExplorerContext } from '../providers/ExplorerProvider';
 import { useExplore } from './useExplore';
 
 const createCompleter: (fields: Ace.Completion[]) => Ace.Completer = (
@@ -21,40 +22,37 @@ const createCompleter: (fields: Ace.Completion[]) => Ace.Completer = (
     },
 });
 
-const mapActiveFieldsToCompletions = (
+const mapFieldsToCompletions = (
     fields: Field[],
-    selectedFields: Set<string>,
     meta: string,
 ): Ace.Completion[] =>
     fields.reduce<Ace.Completion[]>((acc, field) => {
-        if (Array.from(selectedFields).includes(fieldId(field))) {
-            const technicalOption: Ace.Completion = {
-                caption: `\${${getFieldRef(field)}}`,
-                value: `\${${getFieldRef(field)}}`,
-                meta,
-                score: Number.MAX_VALUE,
-            };
-            const friendlyOption: Ace.Completion = {
-                ...technicalOption,
-                caption: `${field.tableLabel} ${field.label}`,
-            };
-            return [...acc, technicalOption, friendlyOption];
-        }
-        return [...acc];
+        const technicalOption: Ace.Completion = {
+            caption: `\${${getFieldRef(field)}}`,
+            value: `\${${getFieldRef(field)}}`,
+            meta,
+            score: Number.MAX_VALUE,
+        };
+        const friendlyOption: Ace.Completion = {
+            ...technicalOption,
+            caption: `${field.tableLabel} ${field.label}`,
+        };
+        return [...acc, technicalOption, friendlyOption];
     }, []);
 
-export const useExplorerAceEditorCompleter = (): {
+export const useTableCalculationAceEditorCompleter = (): {
     setAceEditor: Dispatch<SetStateAction<Ace.Editor | undefined>>;
 } => {
-    const {
-        state: {
-            activeFields,
-            unsavedChartVersion: {
-                tableName,
-                metricQuery: { additionalMetrics },
-            },
-        },
-    } = useExplorer();
+    const activeFields = useExplorerContext(
+        (context) => context.state.activeFields,
+    );
+    const tableName = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.tableName,
+    );
+    const additionalMetrics = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.additionalMetrics,
+    );
     const explore = useExplore(tableName);
     const [aceEditor, setAceEditor] = useState<Ace.Editor>();
 
@@ -80,20 +78,20 @@ export const useExplorerAceEditorCompleter = (): {
             >(
                 (acc, table) => [
                     ...acc,
-                    ...mapActiveFieldsToCompletions(
+                    ...mapFieldsToCompletions(
                         [
                             ...Object.values(table.metrics),
                             ...customMetrics.filter(
                                 (customMetric) =>
                                     customMetric.table === table.name,
                             ),
-                        ],
-                        activeFields,
+                        ].filter((field) => activeFields.has(getItemId(field))),
                         'Metric',
                     ),
-                    ...mapActiveFieldsToCompletions(
-                        Object.values(table.dimensions),
-                        activeFields,
+                    ...mapFieldsToCompletions(
+                        Object.values(table.dimensions).filter((field) =>
+                            activeFields.has(getItemId(field)),
+                        ),
                         'Dimension',
                     ),
                 ],
@@ -105,6 +103,34 @@ export const useExplorerAceEditorCompleter = (): {
             langTools.setCompleters([]);
         };
     }, [aceEditor, explore, activeFields, additionalMetrics]);
+
+    return {
+        setAceEditor,
+    };
+};
+
+export const useCustomDimensionsAceEditorCompleter = (): {
+    setAceEditor: Dispatch<SetStateAction<Ace.Editor | undefined>>;
+} => {
+    const tableName = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.tableName,
+    );
+    const explore = useExplore(tableName);
+    const [aceEditor, setAceEditor] = useState<Ace.Editor>();
+
+    useEffect(() => {
+        if (aceEditor && explore.data) {
+            const activeExplore = explore.data;
+            const fields = mapFieldsToCompletions(
+                getDimensions(activeExplore),
+                'Dimension',
+            );
+            langTools.setCompleters([createCompleter(fields)]);
+        }
+        return () => {
+            langTools.setCompleters([]);
+        };
+    }, [aceEditor, explore]);
 
     return {
         setAceEditor,

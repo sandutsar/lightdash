@@ -1,116 +1,158 @@
-import { HTMLTable, NonIdealState } from '@blueprintjs/core';
-import {
-    Field,
-    fieldId,
-    friendlyName,
-    getFields,
-    getItemId,
-    getResultValues,
-    isAdditionalMetric,
-    isNumericItem,
-    TableCalculation,
-} from 'common';
-import React, { FC, useMemo } from 'react';
-import { mapDataToTable } from '../../utils/tableData';
+import { Box, Flex } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
+import { type FC } from 'react';
+import PivotTable from '../common/PivotTable';
+import SuboptimalState from '../common/SuboptimalState/SuboptimalState';
+import Table from '../common/Table';
+import { ResultCount } from '../common/Table/TablePagination';
+import { isTableVisualizationConfig } from '../LightdashVisualization/VisualizationConfigTable';
 import { useVisualizationContext } from '../LightdashVisualization/VisualizationProvider';
 import { LoadingChart } from '../SimpleChart';
-import {
-    TableCell,
-    TableHeader,
-    TableInnerWrapper,
-    TableRow,
-    TableWrapper,
-} from './SimpleTable.styles';
+import CellContextMenu from './CellContextMenu';
+import DashboardCellContextMenu from './DashboardCellContextMenu';
+import DashboardHeaderContextMenu from './DashboardHeaderContextMenu';
+import MinimalCellContextMenu from './MinimalCellContextMenu';
 
-const SimpleTable: FC = () => {
+type SimpleTableProps = {
+    isDashboard: boolean;
+    tileUuid?: string;
+    className?: string;
+    $shouldExpand?: boolean;
+    minimal?: boolean;
+};
+
+const SimpleTable: FC<SimpleTableProps> = ({
+    isDashboard,
+    tileUuid,
+    className,
+    $shouldExpand,
+    minimal = false,
+    ...rest
+}) => {
     const {
-        resultsData,
         isLoading,
-        columnOrder: headers,
-        explore,
+        columnOrder,
+        isSqlRunner,
+        itemsMap,
+        visualizationConfig,
     } = useVisualizationContext();
-    const tableItems = resultsData?.rows
-        ? getResultValues(resultsData?.rows).slice(0, 25)
-        : [];
 
-    const itemMap = useMemo<Record<string, Field | TableCalculation>>(() => {
-        if (explore && resultsData) {
-            return [
-                ...getFields(explore),
-                ...(resultsData.metricQuery.additionalMetrics || []),
-                ...resultsData.metricQuery.tableCalculations,
-            ].reduce(
-                (acc, item) => ({
-                    ...acc,
-                    [isAdditionalMetric(item)
-                        ? fieldId(item)
-                        : getItemId(item)]: item,
-                }),
-                {},
-            );
-        }
-        return {};
-    }, [explore, resultsData]);
+    if (!isTableVisualizationConfig(visualizationConfig)) return null;
 
-    const rows = mapDataToTable(tableItems, headers);
-    const validData = rows && headers;
+    const {
+        rows,
+        error,
+        columns,
+        showColumnCalculation,
+        conditionalFormattings,
+        hideRowNumbers,
+        pivotTableData,
+        getFieldLabel,
+        getField,
+        showResultsTotal,
+        showSubtotals,
+    } = visualizationConfig.chartConfig;
 
     if (isLoading) return <LoadingChart />;
 
+    if (error) {
+        return (
+            <SuboptimalState
+                title="Results not available"
+                description={error}
+                icon={IconAlertCircle}
+            />
+        );
+    }
+
+    if (pivotTableData.error) {
+        return (
+            <SuboptimalState
+                title="Results not available"
+                description={pivotTableData.error}
+                icon={IconAlertCircle}
+            />
+        );
+    } else if (pivotTableData.loading || pivotTableData.data) {
+        return (
+            <Box
+                p="xs"
+                pb={showResultsTotal ? 'xxl' : 'xl'}
+                miw="100%"
+                h="100%"
+            >
+                {pivotTableData.data ? (
+                    <>
+                        <PivotTable
+                            className={className}
+                            data={pivotTableData.data}
+                            conditionalFormattings={conditionalFormattings}
+                            getFieldLabel={getFieldLabel}
+                            getField={getField}
+                            hideRowNumbers={hideRowNumbers}
+                            showSubtotals={showSubtotals}
+                        />
+                        {showResultsTotal && (
+                            <Flex justify="flex-end" pt="xxs" align="center">
+                                <ResultCount
+                                    count={pivotTableData.data.rowsCount}
+                                />
+                            </Flex>
+                        )}
+                    </>
+                ) : (
+                    <LoadingChart />
+                )}
+            </Box>
+        );
+    }
+
     return (
-        <>
-            {validData ? (
-                <TableWrapper className="cohere-block">
-                    <TableInnerWrapper>
-                        <HTMLTable style={{ width: '100%' }} bordered condensed>
-                            <TableHeader>
-                                <tr>
-                                    {headers.map((header: string) => (
-                                        <th>{friendlyName(header)}</th>
-                                    ))}
-                                </tr>
-                            </TableHeader>
-                            <tbody>
-                                {rows.map(
-                                    (row: string[] | boolean[], i: number) => (
-                                        <TableRow i={i}>
-                                            {row.map(
-                                                (
-                                                    item: string | boolean,
-                                                    index,
-                                                ) => (
-                                                    <TableCell
-                                                        isNaN={
-                                                            !isNumericItem(
-                                                                itemMap[
-                                                                    headers[
-                                                                        index
-                                                                    ]
-                                                                ],
-                                                            )
-                                                        }
-                                                    >
-                                                        {item || '-'}
-                                                    </TableCell>
-                                                ),
-                                            )}
-                                        </TableRow>
-                                    ),
-                                )}
-                            </tbody>
-                        </HTMLTable>
-                    </TableInnerWrapper>
-                </TableWrapper>
-            ) : (
-                <div style={{ padding: '50px 0' }}>
-                    <NonIdealState
-                        title="No data available"
-                        description="Query metrics and dimensions with results."
-                        icon="chart"
-                    />
-                </div>
-            )}
-        </>
+        <Box p="xs" pb="md" miw="100%" h="100%">
+            <Table
+                minimal={minimal}
+                $shouldExpand={$shouldExpand}
+                className={className}
+                status="success"
+                data={rows}
+                columns={columns}
+                columnOrder={columnOrder}
+                hideRowNumbers={hideRowNumbers}
+                showColumnCalculation={showColumnCalculation}
+                showSubtotals={showSubtotals}
+                conditionalFormattings={conditionalFormattings}
+                footer={{
+                    show: showColumnCalculation,
+                }}
+                headerContextMenu={(props) => {
+                    if (!minimal && isDashboard && tileUuid)
+                        return (
+                            <DashboardHeaderContextMenu
+                                {...props}
+                                tileUuid={tileUuid}
+                            />
+                        );
+                    return null;
+                }}
+                cellContextMenu={(props) => {
+                    if (isSqlRunner) return <>{props.children}</>;
+                    if (minimal) {
+                        return <MinimalCellContextMenu {...props} />;
+                    }
+                    if (isDashboard && tileUuid) {
+                        return (
+                            <DashboardCellContextMenu
+                                {...props}
+                                itemsMap={itemsMap}
+                            />
+                        );
+                    }
+                    return <CellContextMenu {...props} />;
+                }}
+                pagination={{ showResultsTotal }}
+                {...rest}
+            />
+        </Box>
     );
 };
 

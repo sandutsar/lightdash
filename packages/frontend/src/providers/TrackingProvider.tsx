@@ -1,22 +1,22 @@
-import { LightdashMode } from 'common';
-import React, {
+import { LightdashMode } from '@lightdash/common';
+import {
     createContext,
-    FC,
     memo,
     useCallback,
     useContext,
     useEffect,
     useMemo,
     useState,
+    type FC,
 } from 'react';
-import { FormState } from 'react-hook-form';
+import { type FormState } from 'react-hook-form';
 import * as rudderSDK from 'rudder-sdk-js';
 import {
-    CategoryName,
-    EventName,
-    PageName,
     PageType,
-    SectionName,
+    type CategoryName,
+    type EventName,
+    type PageName,
+    type SectionName,
 } from '../types/Events';
 import { useApp } from './AppProvider';
 
@@ -30,19 +30,41 @@ type GenericEvent = {
         | EventName.CONFIRM_DELETE_TABLE_CALCULATION_BUTTON_CLICKED
         | EventName.DELETE_TABLE_CALCULATION_BUTTON_CLICKED
         | EventName.EDIT_TABLE_CALCULATION_BUTTON_CLICKED
-        | EventName.SHOW_LINEAGE_BUTTON_CLICKED
         | EventName.CREATE_PROJECT_BUTTON_CLICKED
         | EventName.REFRESH_DBT_CONNECTION_BUTTON_CLICKED
         | EventName.UPDATE_PROJECT_TABLES_CONFIGURATION_BUTTON_CLICKED
         | EventName.UPDATE_PROJECT_BUTTON_CLICKED
         | EventName.UPDATE_TABLE_CALCULATION_BUTTON_CLICKED
         | EventName.CREATE_TABLE_CALCULATION_BUTTON_CLICKED
+        | EventName.CREATE_QUICK_TABLE_CALCULATION_BUTTON_CLICKED
         | EventName.ADD_FILTER_CLICKED
         | EventName.NOTIFICATIONS_CLICKED
         | EventName.NOTIFICATIONS_ITEM_CLICKED
         | EventName.NOTIFICATIONS_READ_MORE_CLICKED
         | EventName.ADD_CUSTOM_METRIC_CLICKED
-        | EventName.REMOVE_CUSTOM_METRIC_CLICKED;
+        | EventName.REMOVE_CUSTOM_METRIC_CLICKED
+        | EventName.CUSTOM_AXIS_RANGE_TOGGLE_CLICKED
+        | EventName.CREATE_PROJECT_ACCESS_BUTTON_CLICKED
+        | EventName.CREATE_PROJECT_CLI_BUTTON_CLICKED
+        | EventName.CREATE_PROJECT_MANUALLY_BUTTON_CLICKED
+        | EventName.COPY_CREATE_PROJECT_CODE_BUTTON_CLICKED
+        | EventName.TRY_DEMO_CLICKED
+        | EventName.GO_TO_LINK_CLICKED
+        | EventName.USAGE_ANALYTICS_CLICKED
+        | EventName.VIEW_UNDERLYING_DATA_CLICKED
+        | EventName.DRILL_BY_CLICKED
+        | EventName.SCHEDULER_SEND_NOW_BUTTON
+        | EventName.ADD_CUSTOM_DIMENSION_CLICKED
+        | EventName.DATE_ZOOM_CLICKED
+        | EventName.COMMENTS_CLICKED
+        | EventName.NOTIFICATIONS_COMMENTS_ITEM_CLICKED
+        | EventName.DASHBOARD_AUTO_REFRESH_UPDATED
+        | EventName.METRICS_CATALOG_CHART_USAGE_CLICKED
+        | EventName.METRICS_CATALOG_EXPLORE_CLICKED
+        | EventName.METRICS_CATALOG_CHART_USAGE_CHART_CLICKED
+        | EventName.METRICS_CATALOG_CATEGORY_CLICKED
+        | EventName.METRICS_CATALOG_CATEGORY_FILTER_APPLIED
+        | EventName.METRICS_CATALOG_ICON_APPLIED;
     properties?: {};
 };
 
@@ -54,7 +76,8 @@ type DocumentationClickedEvent = {
             | 'save_chart'
             | 'run_query'
             | 'define_metrics'
-            | 'connect_project';
+            | 'connect_project'
+            | 'getting_started';
     };
 };
 
@@ -77,6 +100,36 @@ export type SetupStepClickedEvent = {
     };
 };
 
+export type SearchResultClickedEvent = {
+    name: EventName.SEARCH_RESULT_CLICKED;
+    properties: {
+        type:
+            | 'space'
+            | 'dashboard'
+            | 'saved_chart'
+            | 'table'
+            | 'field'
+            | 'sql_chart'
+            | 'semantic_viewer_chart'
+            | 'page';
+        id: string;
+    };
+};
+
+export type GlobalSearchOpenEvent = {
+    name: EventName.GLOBAL_SEARCH_OPEN;
+    properties: {
+        action: 'input_click' | 'hotkeys';
+    };
+};
+
+export type GlobalSearchClosedEvent = {
+    name: EventName.GLOBAL_SEARCH_CLOSED;
+    properties: {
+        action: 'result_click' | 'default';
+    };
+};
+
 export type FormClickedEvent = {
     name: EventName.FORM_STATE_CHANGED;
     properties: {
@@ -85,12 +138,121 @@ export type FormClickedEvent = {
     };
 };
 
-type EventData =
+export type CrossFilterDashboardAppliedEvent = {
+    name: EventName.CROSS_FILTER_DASHBOARD_APPLIED;
+    properties: {
+        fieldType: string | undefined;
+        dashboardId: string;
+        projectId: string;
+    };
+};
+
+export type ViewUnderlyingDataClickedEvent = {
+    name: EventName.VIEW_UNDERLYING_DATA_CLICKED;
+    properties: {
+        organizationId: string;
+        userId: string;
+        projectId: string;
+    };
+};
+
+export type DrillByClickedEvent = {
+    name: EventName.DRILL_BY_CLICKED;
+    properties: {
+        organizationId: string;
+        userId: string;
+        projectId: string;
+    };
+};
+
+export type DashboardAutoRefreshUpdateEvent = {
+    name: EventName.DASHBOARD_AUTO_REFRESH_UPDATED;
+    properties: {
+        organizationId: string;
+        userId: string;
+        projectId: string;
+        dashboardId: string;
+        frequency: string;
+    };
+};
+
+type MetricsCatalogChartUsageClickedEvent = {
+    name: EventName.METRICS_CATALOG_CHART_USAGE_CLICKED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+        metricName: string;
+        chartCount: number;
+        tableName: string;
+    };
+};
+
+type MetricsCatalogExploreClickedEvent = {
+    name: EventName.METRICS_CATALOG_EXPLORE_CLICKED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+        metricName: string;
+        tableName: string;
+    };
+};
+
+type MetricsCatalogChartUsageChartClickedEvent = {
+    name: EventName.METRICS_CATALOG_CHART_USAGE_CHART_CLICKED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+        metricName: string;
+        tableName: string;
+        chartId: string;
+    };
+};
+
+type MetricsCatalogCategoryClickedEvent = {
+    name: EventName.METRICS_CATALOG_CATEGORY_CLICKED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+        tagName: string;
+        isNewTag: boolean;
+    };
+};
+
+type MetricsCatalogCategoryFilterAppliedEvent = {
+    name: EventName.METRICS_CATALOG_CATEGORY_FILTER_APPLIED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+    };
+};
+
+type MetricsCatalogIconAppliedEvent = {
+    name: EventName.METRICS_CATALOG_ICON_APPLIED;
+    properties: {
+        organizationId: string;
+        projectId: string;
+    };
+};
+
+export type EventData =
     | GenericEvent
     | FormClickedEvent
     | SetupStepClickedEvent
     | DocumentationClickedEvent
-    | OnboardingStepClickedEvent;
+    | SearchResultClickedEvent
+    | GlobalSearchOpenEvent
+    | GlobalSearchClosedEvent
+    | OnboardingStepClickedEvent
+    | CrossFilterDashboardAppliedEvent
+    | ViewUnderlyingDataClickedEvent
+    | DrillByClickedEvent
+    | DashboardAutoRefreshUpdateEvent
+    | MetricsCatalogChartUsageClickedEvent
+    | MetricsCatalogExploreClickedEvent
+    | MetricsCatalogChartUsageChartClickedEvent
+    | MetricsCatalogCategoryClickedEvent
+    | MetricsCatalogCategoryFilterAppliedEvent
+    | MetricsCatalogIconAppliedEvent;
 
 type IdentifyData = {
     id: string;
@@ -125,7 +287,7 @@ const Context = createContext<TrackingContext>(undefined as any);
 
 const LIGHTDASH_APP_NAME = 'lightdash_webapp';
 
-export const TrackingProvider: FC<TrackingData> = ({
+const TrackingProviderMain: FC<React.PropsWithChildren<TrackingData>> = ({
     rudder,
     page: pageContext,
     section: sectionContext,
@@ -162,6 +324,7 @@ export const TrackingProvider: FC<TrackingData> = ({
             referrer: null,
             initial_referrer: null,
             search: null,
+            tab_url: null,
         }),
         [],
     );
@@ -243,18 +406,37 @@ export const TrackingProvider: FC<TrackingData> = ({
     );
 };
 
-export function useTracking(): TrackingContext {
+interface TrackingProviderProps extends TrackingData {
+    enabled?: boolean;
+}
+
+export const TrackingProvider: FC<
+    React.PropsWithChildren<TrackingProviderProps>
+> = ({ children, enabled = true, ...rest }) => {
+    if (enabled) {
+        return (
+            <TrackingProviderMain {...rest}>{children}</TrackingProviderMain>
+        );
+    } else {
+        return <>{children}</>;
+    }
+};
+
+export function useTracking<S extends boolean = false>(
+    failSilently?: S,
+): S extends false ? TrackingContext : TrackingContext | undefined {
     const context = useContext(Context);
-    if (context === undefined) {
+
+    if (context === undefined && failSilently !== true) {
         throw new Error('useTracking must be used within a TrackingProvider');
     }
+
     return context;
 }
 
-const NestedTrackingProvider: FC<Partial<TrackingData>> = ({
-    children,
-    ...rest
-}) => (
+const NestedTrackingProvider: FC<
+    React.PropsWithChildren<Partial<TrackingData>>
+> = ({ children, ...rest }) => (
     <Context.Consumer>
         {({ data }) => (
             <TrackingProvider {...{ ...data, ...rest }}>
@@ -264,7 +446,10 @@ const NestedTrackingProvider: FC<Partial<TrackingData>> = ({
     </Context.Consumer>
 );
 
-export const TrackPage: FC<PageData> = ({ children, ...rest }) => {
+export const TrackPage: FC<React.PropsWithChildren<PageData>> = ({
+    children,
+    ...rest
+}) => {
     const { page } = useTracking();
 
     useEffect(() => {
@@ -278,11 +463,13 @@ export const TrackPage: FC<PageData> = ({ children, ...rest }) => {
     );
 };
 
-export const TrackSection: FC<SectionData> = memo(({ children, name }) => {
-    const section = useMemo(() => ({ name }), [name]);
-    return (
-        <NestedTrackingProvider section={section}>
-            {children || null}
-        </NestedTrackingProvider>
-    );
-});
+export const TrackSection: FC<React.PropsWithChildren<SectionData>> = memo(
+    ({ children, name }) => {
+        const section = useMemo(() => ({ name }), [name]);
+        return (
+            <NestedTrackingProvider section={section}>
+                {children || null}
+            </NestedTrackingProvider>
+        );
+    },
+);

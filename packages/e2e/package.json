@@ -1,28 +1,25 @@
 {
     "name": "e2e",
-    "version": "0.95.5",
+    "version": "0.1361.1",
     "main": "index.js",
     "license": "MIT",
     "scripts": {
-        "cypress:open": "cypress open",
+        "cypress:open": "cypress open --e2e",
         "cypress:run": "cypress run",
-        "lint": "eslint ./cypress",
-        "format": "prettier --check --ignore-unknown ./cypress"
+        "linter": "eslint -c .eslintrc.js --ignore-path ./../../.gitignore",
+        "formatter": "prettier --config .prettierrc.js --ignore-unknown --ignore-path ./../../.gitignore",
+        "lint": "yarn run linter ./cypress",
+        "fix-lint": "yarn run linter ./cypress --fix",
+        "format": "yarn run formatter ./cypress --check",
+        "fix-format": "yarn run formatter ./cypress --write"
     },
-    "devDependencies": {
-        "@typescript-eslint/eslint-plugin": "^5.11.0",
-        "eslint": "^8.7.0",
-        "eslint-config-airbnb-base": "^15.0.0",
-        "eslint-config-airbnb-typescript": "^16.1.0",
-        "eslint-config-prettier": "^8.3.0",
-        "eslint-plugin-import": "^2.25.4",
-        "eslint-plugin-json": "^3.1.0",
-        "prettier": "^2.5.1"
-    },
+    "devDependencies": {},
     "dependencies": {
-        "@testing-library/cypress": "^7.0.6",
-        "@types/node": "^16.0.1",
-        "cypress": "^9.5.4",
-        "common": "^0.95.5"
+        "@lightdash/common": "^0.1361.1",
+        "@testing-library/cypress": "^10.0.2",
+        "cypress": "^13.14.2",
+        "cypress-file-upload": "^5.0.8",
+        "cypress-split": "^1.24.0",
+        "node-fetch": "^2.7.0"
     }
 }

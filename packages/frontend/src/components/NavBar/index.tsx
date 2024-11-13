@@ -1,158 +1,112 @@
+import { assertUnreachable, ProjectType } from '@lightdash/common';
 import {
-    Alignment,
-    Button,
-    Classes,
-    Menu,
-    MenuItem,
-    NavbarGroup,
-    PopoverInteractionKind,
-    Position,
-} from '@blueprintjs/core';
-import { Popover2 } from '@blueprintjs/popover2';
-import React, { useState } from 'react';
-import { useMutation } from 'react-query';
-import { useHistory, useParams } from 'react-router-dom';
-import { lightdashApi } from '../../api';
-import { useDefaultProject, useProjects } from '../../hooks/useProjects';
+    Box,
+    getDefaultZIndex,
+    Header,
+    MantineProvider,
+    type MantineTheme,
+} from '@mantine/core';
+import { memo, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import useDashboardStorage from '../../hooks/dashboard/useDashboardStorage';
+import { useActiveProjectUuid } from '../../hooks/useActiveProject';
+import { useProjects } from '../../hooks/useProjects';
 import { useApp } from '../../providers/AppProvider';
-import { UserAvatar } from '../Avatar';
-import { ErrorLogsDrawer } from '../ErrorLogsDrawer';
-import NavLink from '../NavLink';
-import { ShowErrorsButton } from '../ShowErrorsButton';
-import UserSettingsModal from '../UserSettingsModal';
-import BrowseMenu from './BrowseMenu';
-import ExploreMenu from './ExploreMenu';
-import HelpMenu from './HelpMenu';
-import {
-    Divider,
-    LogoContainer,
-    NavBarWrapper,
-    ProjectDropdown,
-} from './NavBar.styles';
+import { DashboardExplorerBanner } from './DashboardExplorerBanner';
+import { MainNavBarContent } from './MainNavBarContent';
+import { PreviewBanner } from './PreviewBanner';
 
-const logoutQuery = async () =>
-    lightdashApi({
-        url: `/logout`,
-        method: 'GET',
-        body: undefined,
-    });
+export const NAVBAR_HEIGHT = 50;
+export const BANNER_HEIGHT = 35;
 
-const NavBar = () => {
-    const {
-        user,
-        errorLogs: { errorLogs, setErrorLogsVisible },
-        showToastSuccess,
-    } = useApp();
-    const defaultProject = useDefaultProject();
-    const { isLoading, data } = useProjects();
-    const params = useParams<{ projectUuid: string | undefined }>();
-    const selectedProjectUuid =
-        params.projectUuid || defaultProject.data?.projectUuid;
-    const history = useHistory();
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<string | undefined>();
-    const { mutate } = useMutation(logoutQuery, {
-        mutationKey: ['logout'],
-        onSuccess: () => {
-            window.location.href = '/login';
-        },
-    });
+enum NavBarMode {
+    DEFAULT = 'default',
+    EDITING_DASHBOARD_CHART = 'editingDashboardChart',
+}
+
+const defaultNavbarStyles = {
+    alignItems: 'center',
+    boxShadow: 'lg',
+    justifyContent: 'flex-start',
+};
+
+const useNavBarMode = () => {
+    const { isEditingDashboardChart } = useDashboardStorage();
+
+    return {
+        navBarMode: isEditingDashboardChart
+            ? NavBarMode.EDITING_DASHBOARD_CHART
+            : NavBarMode.DEFAULT,
+    };
+};
+
+const NavBar = memo(() => {
+    const { projectUuid } = useParams<{ projectUuid: string }>();
+    const { data: projects } = useProjects();
+    const { activeProjectUuid, isLoading: isLoadingActiveProject } =
+        useActiveProjectUuid({ refetchOnMount: true });
+    const { isFullscreen } = useApp();
+
+    const { navBarMode } = useNavBarMode();
+
+    const isCurrentProjectPreview = !!projects?.find(
+        (project) =>
+            project.projectUuid === activeProjectUuid &&
+            project.type === ProjectType.PREVIEW,
+    );
+
+    const getHeaderStyles = useCallback(
+        (theme: MantineTheme) => ({
+            ...defaultNavbarStyles,
+            ...(navBarMode === NavBarMode.EDITING_DASHBOARD_CHART && {
+                justifyContent: 'center',
+                borderBottom: 'none',
+                backgroundColor: theme.colors.blue['6'],
+                color: 'white',
+            }),
+        }),
+        [navBarMode],
+    );
+    const headerContainerHeight =
+        NAVBAR_HEIGHT + (isCurrentProjectPreview ? BANNER_HEIGHT : 0);
+
+    const renderNavBarContent = () => {
+        switch (navBarMode) {
+            case NavBarMode.EDITING_DASHBOARD_CHART:
+                return <DashboardExplorerBanner projectUuid={projectUuid} />;
+            case NavBarMode.DEFAULT:
+                return (
+                    <MainNavBarContent
+                        activeProjectUuid={activeProjectUuid}
+                        isLoadingActiveProject={isLoadingActiveProject}
+                    />
+                );
+            default:
+                assertUnreachable(
+                    navBarMode,
+                    `Unknown navBarMode ${navBarMode}`,
+                );
+        }
+    };
 
     return (
-        <>
-            <NavBarWrapper className={Classes.DARK}>
-                <NavbarGroup align={Alignment.LEFT}>
-                    <NavLink
-                        to={`/projects/${selectedProjectUuid}/home`}
-                        style={{ marginRight: 24, display: 'flex' }}
-                    >
-                        <LogoContainer title="Home" />
-                    </NavLink>
-                    {!!selectedProjectUuid && (
-                        <>
-                            <ExploreMenu projectId={selectedProjectUuid} />
-                            <BrowseMenu projectId={selectedProjectUuid} />
-                        </>
-                    )}
-                    <Button
-                        minimal
-                        icon="cog"
-                        text="Settings"
-                        onClick={() => setIsSettingsOpen(true)}
-                        data-cy="settings-button"
-                    />
-                </NavbarGroup>
-                <NavbarGroup align={Alignment.RIGHT}>
-                    <HelpMenu />
-                    <Divider />
-                    <ShowErrorsButton
-                        errorLogs={errorLogs}
-                        setErrorLogsVisible={setErrorLogsVisible}
-                    />
-                    {selectedProjectUuid && (
-                        <ProjectDropdown
-                            disabled={isLoading || (data || []).length <= 0}
-                            options={data?.map((item) => ({
-                                value: item.projectUuid,
-                                label: item.name,
-                            }))}
-                            fill
-                            value={selectedProjectUuid}
-                            onChange={(e) => {
-                                showToastSuccess({
-                                    icon: 'tick',
-                                    title: `You are now viewing ${
-                                        data?.find(
-                                            ({ projectUuid }) =>
-                                                projectUuid === e.target.value,
-                                        )?.name
-                                    }`,
-                                });
-                                history.push(
-                                    `/projects/${e.target.value}/home`,
-                                );
-                            }}
-                        />
-                    )}
-                    <Popover2
-                        interactionKind={PopoverInteractionKind.CLICK}
-                        content={
-                            <Menu>
-                                {user.data?.ability?.can(
-                                    'manage',
-                                    'InviteLink',
-                                ) ? (
-                                    <MenuItem
-                                        icon="new-person"
-                                        text="Invite user"
-                                        onClick={() => {
-                                            setActiveTab('invites');
-                                            setIsSettingsOpen(true);
-                                        }}
-                                    />
-                                ) : null}
-                                <MenuItem
-                                    icon="log-out"
-                                    text="Logout"
-                                    onClick={() => mutate()}
-                                />
-                            </Menu>
-                        }
-                        position={Position.BOTTOM_LEFT}
-                    >
-                        <UserAvatar />
-                    </Popover2>
-                </NavbarGroup>
-            </NavBarWrapper>
-            <UserSettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                activeTab={activeTab}
-                onChangeTab={setActiveTab}
-            />
-            <ErrorLogsDrawer />
-        </>
+        <MantineProvider inherit theme={{ colorScheme: 'dark' }}>
+            {isCurrentProjectPreview && <PreviewBanner />}
+            {/* hack to make navbar fixed and maintain space */}
+            <Box h={!isFullscreen ? headerContainerHeight : 0} />
+            <Header
+                height={NAVBAR_HEIGHT}
+                fixed
+                mt={isCurrentProjectPreview ? BANNER_HEIGHT : 0}
+                display={isFullscreen ? 'none' : 'flex'}
+                px="md"
+                zIndex={getDefaultZIndex('app')}
+                styles={(theme) => ({ root: getHeaderStyles(theme) })}
+            >
+                {renderNavBarContent()}
+            </Header>
+        </MantineProvider>
     );
-};
+});
 
 export default NavBar;

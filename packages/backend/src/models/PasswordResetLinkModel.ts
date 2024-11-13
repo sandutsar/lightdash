@@ -1,4 +1,4 @@
-import { NotExistsError, PasswordResetLink } from 'common';
+import { NotExistsError, PasswordResetLink } from '@lightdash/common';
 import * as crypto from 'crypto';
 import { Knex } from 'knex';
 import { URL } from 'url';
@@ -6,7 +6,7 @@ import { LightdashConfig } from '../config/parseConfig';
 import { EmailTableName } from '../database/entities/emails';
 import { PasswordResetTableName } from '../database/entities/passwordResetLinks';
 
-type Dependencies = {
+type PasswordResetLinkModelArguments = {
     database: Knex;
     lightdashConfig: LightdashConfig;
 };
@@ -16,7 +16,10 @@ export class PasswordResetLinkModel {
 
     private lightdashConfig: LightdashConfig;
 
-    constructor({ database, lightdashConfig }: Dependencies) {
+    constructor({
+        database,
+        lightdashConfig,
+    }: PasswordResetLinkModelArguments) {
         this.database = database;
         this.lightdashConfig = lightdashConfig;
     }

@@ -1,11 +1,19 @@
-import { InputGroup } from '@blueprintjs/core';
-import React, { FC } from 'react';
-import InputWrapper, { InputWrapperProps } from './InputWrapper';
+import { TextInput } from '@mantine/core';
+import React, { type FC } from 'react';
+import InputWrapper, { type InputWrapperProps } from './InputWrapper';
 
-const Input: FC<Omit<InputWrapperProps, 'render'>> = ({ ...rest }) => (
+type FieldProps = {
+    rightElement?: React.ReactNode;
+};
+const Input: FC<Omit<InputWrapperProps, 'render'> & FieldProps> = ({
+    rightElement,
+    ...rest
+}) => (
     <InputWrapper
         {...rest}
-        render={(props, { field }) => <InputGroup {...props} {...field} />}
+        render={(props, { field }) => (
+            <TextInput {...props} {...field} rightSection={rightElement} />
+        )}
     />
 );
 

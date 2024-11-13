@@ -1,7 +1,19 @@
-import { NonIdealState, Spinner } from '@blueprintjs/core';
+import { type PivotReference } from '@lightdash/common';
+import { IconChartBarOff } from '@tabler/icons-react';
 import EChartsReact from 'echarts-for-react';
-import React, { FC, useCallback, useEffect } from 'react';
-import useEcharts from '../../hooks/useEcharts';
+import { type EChartsReactProps, type Opts } from 'echarts-for-react/lib/types';
+import {
+    memo,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    type FC,
+} from 'react';
+import useEchartsCartesianConfig, {
+    isLineSeriesOption,
+} from '../../hooks/echarts/useEchartsCartesianConfig';
+import SuboptimalState from '../common/SuboptimalState/SuboptimalState';
 import { useVisualizationContext } from '../LightdashVisualization/VisualizationProvider';
 
 type EchartBaseClickEvent = {
@@ -29,6 +41,7 @@ type EchartBaseClickEvent = {
     // color of the shape, works when componentType is 'series'.
     color: string;
     event: { event: MouseEvent };
+    pivotReference?: PivotReference;
 };
 
 export type EchartSeriesClickEvent = EchartBaseClickEvent & {
@@ -36,33 +49,67 @@ export type EchartSeriesClickEvent = EchartBaseClickEvent & {
     data: Record<string, any>;
     seriesIndex: number;
     dimensionNames: string[];
+    pivotReference?: PivotReference;
 };
 
 type EchartClickEvent = EchartSeriesClickEvent | EchartBaseClickEvent;
 
-const EmptyChart = () => (
-    <div style={{ padding: '50px 0' }}>
-        <NonIdealState
+type LegendClickEvent = {
+    selected: {
+        [name: string]: boolean;
+    };
+};
+
+export const EmptyChart = () => (
+    <div style={{ height: '100%', width: '100%', padding: '50px 0' }}>
+        <SuboptimalState
             title="No data available"
             description="Query metrics and dimensions with results."
-            icon="chart"
+            icon={IconChartBarOff}
         />
     </div>
 );
+
 export const LoadingChart = () => (
-    <div style={{ padding: '50px 0' }}>
-        <NonIdealState title="Loading chart" icon={<Spinner />} />
+    <div style={{ height: '100%', width: '100%', padding: '50px 0' }}>
+        <SuboptimalState
+            title="Loading chart"
+            loading
+            className="loading_chart"
+        />
     </div>
 );
 
 const isSeriesClickEvent = (e: EchartClickEvent): e is EchartSeriesClickEvent =>
     e.componentType === 'series';
 
-const SimpleChart: FC = () => {
+type SimpleChartProps = Omit<EChartsReactProps, 'option'> & {
+    isInDashboard: boolean;
+    $shouldExpand?: boolean;
+    className?: string;
+    'data-testid'?: string;
+};
+
+const SimpleChart: FC<SimpleChartProps> = memo((props) => {
     const { chartRef, isLoading, onSeriesContextMenu } =
         useVisualizationContext();
 
-    const eChartsOptions = useEcharts();
+    const [selectedLegends, setSelectedLegends] = useState({});
+    const [selectedLegendsUpdated, setSelectedLegendsUpdated] = useState({});
+
+    const onLegendChange = useCallback((params: LegendClickEvent) => {
+        setSelectedLegends(params.selected);
+    }, []);
+
+    useEffect(() => {
+        setSelectedLegendsUpdated(selectedLegends);
+    }, [selectedLegends]);
+
+    const eChartsOptions = useEchartsCartesianConfig(
+        selectedLegendsUpdated,
+        props.isInDashboard,
+    );
+
     useEffect(() => {
         const listener = () => {
             const eCharts = chartRef.current?.getEchartsInstance();
@@ -82,33 +129,141 @@ const SimpleChart: FC = () => {
                 }
                 e.event.event.preventDefault();
                 if (isSeriesClickEvent(e)) {
-                    onSeriesContextMenu(e);
+                    const series = (eChartsOptions?.series || [])[
+                        e.seriesIndex
+                    ];
+                    if (series && series.encode) {
+                        onSeriesContextMenu(e, eChartsOptions?.series || []);
+                    }
                 }
             }
         },
-        [onSeriesContextMenu],
+        [onSeriesContextMenu, eChartsOptions],
     );
+
+    const opts = useMemo<Opts>(() => ({ renderer: 'svg' }), []);
+
+    const handleOnMouseOver = useCallback(
+        (params: any) => {
+            const eCharts = chartRef.current?.getEchartsInstance();
+
+            if (eCharts) {
+                // TODO: move to own util function
+                let setTooltipItemTrigger = true;
+                // Tooltip trigger 'item' does not work when symbol is not shown; reference: https://github.com/apache/echarts/issues/14563
+                const series = eCharts.getOption().series;
+
+                const isGrouped = (series as any[]).some(
+                    (serie) => serie.pivotReference !== undefined,
+                );
+                if (Array.isArray(series) && !isGrouped) return null;
+
+                if (
+                    Array.isArray(series) &&
+                    isLineSeriesOption(series[params.seriesIndex])
+                ) {
+                    setTooltipItemTrigger =
+                        !!series[params.seriesIndex].showSymbol;
+                }
+
+                if (
+                    setTooltipItemTrigger &&
+                    eChartsOptions?.tooltip.formatter
+                ) {
+                    eCharts.setOption(
+                        {
+                            tooltip: {
+                                trigger: 'item',
+                                formatter: (param: any) => {
+                                    // item param are slightly different to axis params, and they don't contain the axisValueLabel
+                                    // so we need to generate it here (and wrap it in an array) and then reuse the formatter used
+                                    // on `useEchartsCartesianConfig` to generate the tooltip
+                                    if (eChartsOptions.tooltip.formatter) {
+                                        const dim =
+                                            param.encode?.x?.[0] !== undefined
+                                                ? param.dimensionNames[
+                                                      param.encode?.x[0]
+                                                  ]
+                                                : '';
+
+                                        const axisValue = param.value[dim];
+                                        return (
+                                            eChartsOptions.tooltip
+                                                .formatter as any
+                                        )([
+                                            {
+                                                ...param,
+                                                axisValueLabel: axisValue,
+                                            },
+                                        ]);
+                                    }
+                                },
+                            },
+                        },
+                        false,
+                        true, // lazy update
+                    );
+                }
+                // Wait for tooltip to change from `axis` to `item` and keep hovered on item highlighted
+                setTimeout(() => {
+                    eCharts.dispatchAction({
+                        type: 'highlight',
+                        seriesIndex: params.seriesIndex,
+                    });
+                }, 100);
+            }
+        },
+        [chartRef, eChartsOptions?.tooltip.formatter],
+    );
+
+    const handleOnMouseOut = useCallback(() => {
+        const eCharts = chartRef.current?.getEchartsInstance();
+
+        if (eCharts) {
+            eCharts.setOption(
+                {
+                    tooltip: eChartsOptions?.tooltip,
+                },
+                false,
+                true, // lazy update
+            );
+        }
+    }, [chartRef, eChartsOptions?.tooltip]);
 
     if (isLoading) return <LoadingChart />;
     if (!eChartsOptions) return <EmptyChart />;
 
     return (
-        <div style={{ padding: 10, height: '100%' }}>
-            <EChartsReact
-                style={{
-                    height: '100%',
-                    width: '100%',
-                }}
-                ref={chartRef}
-                option={eChartsOptions}
-                notMerge
-                opts={{ renderer: 'svg' }}
-                onEvents={{
-                    contextmenu: onChartContextMenu,
-                }}
-            />
-        </div>
+        <EChartsReact
+            data-testid={props['data-testid']}
+            className={props.className}
+            style={
+                props.$shouldExpand
+                    ? {
+                          minHeight: 'inherit',
+                          height: '100%',
+                          width: '100%',
+                      }
+                    : {
+                          minHeight: 'inherit',
+                          // height defaults to 300px
+                          width: '100%',
+                      }
+            }
+            ref={chartRef}
+            option={eChartsOptions}
+            notMerge
+            opts={opts}
+            onEvents={{
+                contextmenu: onChartContextMenu,
+                click: onChartContextMenu,
+                mouseover: handleOnMouseOver,
+                mouseout: handleOnMouseOut,
+                legendselectchanged: onLegendChange,
+            }}
+            {...props}
+        />
     );
-};
+});
 
 export default SimpleChart;

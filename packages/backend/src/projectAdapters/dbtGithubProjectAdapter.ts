@@ -1,8 +1,11 @@
 import {
     CreateWarehouseCredentials,
     DbtProjectEnvironmentVariable,
-} from 'common';
-import { CachedWarehouse, WarehouseClient } from '../types';
+    SupportedDbtVersions,
+    validateGithubToken,
+} from '@lightdash/common';
+import { WarehouseClient } from '@lightdash/warehouses';
+import { CachedWarehouse } from '../types';
 import { DbtGitProjectAdapter } from './dbtGitProjectAdapter';
 
 const DEFAULT_GITHUB_HOST_DOMAIN = 'github.com';
@@ -18,6 +21,8 @@ type DbtGithubProjectAdapterArgs = {
     targetName: string | undefined;
     environment: DbtProjectEnvironmentVariable[] | undefined;
     cachedWarehouse: CachedWarehouse;
+    dbtVersion: SupportedDbtVersions;
+    useDbtLs: boolean;
 };
 
 export class DbtGithubProjectAdapter extends DbtGitProjectAdapter {
@@ -32,8 +37,14 @@ export class DbtGithubProjectAdapter extends DbtGitProjectAdapter {
         targetName,
         environment,
         cachedWarehouse,
+        dbtVersion,
+        useDbtLs,
     }: DbtGithubProjectAdapterArgs) {
-        const remoteRepositoryUrl = `https://${githubPersonalAccessToken}@${
+        const [isValid, error] = validateGithubToken(githubPersonalAccessToken);
+        if (!isValid) {
+            throw new Error(error);
+        }
+        const remoteRepositoryUrl = `https://lightdash:${githubPersonalAccessToken}@${
             hostDomain || DEFAULT_GITHUB_HOST_DOMAIN
         }/${githubRepository}.git`;
         super({
@@ -41,10 +52,13 @@ export class DbtGithubProjectAdapter extends DbtGitProjectAdapter {
             remoteRepositoryUrl,
             projectDirectorySubPath,
             warehouseCredentials,
+            repository: githubRepository,
             gitBranch: githubBranch,
             targetName,
             environment,
             cachedWarehouse,
+            dbtVersion,
+            useDbtLs,
         });
     }
 }

@@ -1,78 +1,99 @@
-import { Classes, Tooltip2 } from '@blueprintjs/popover2';
-import { DashboardTileTypes } from 'common';
-import React, { FC, useState } from 'react';
-import { useAvailableDashboardFilterTargets } from '../../hooks/dashboard/useDashboard';
+import {
+    type DashboardFieldTarget,
+    type DashboardFilterRule,
+    type FilterableDimension,
+    type FilterOperator,
+} from '@lightdash/common';
+import { Flex } from '@mantine/core';
+import { useCallback, useState, type FC } from 'react';
+import { useParams } from 'react-router-dom';
+import { useProject } from '../../hooks/useProject';
 import { useDashboardContext } from '../../providers/DashboardProvider';
+import { useTracking } from '../../providers/TrackingProvider';
+import { EventName } from '../../types/Events';
 import { FiltersProvider } from '../common/Filters/FiltersProvider';
 import ActiveFilters from './ActiveFilters';
-import {
-    DashboardFilterWrapper,
-    FilterTrigger,
-    Tooltip,
-    TriggerWrapper,
-} from './DashboardFilter.styles';
-import FilterSearch from './FilterSearch';
+import Filter from './Filter';
 
 interface Props {
     isEditMode: boolean;
+    activeTabUuid: string | undefined;
 }
 
-const DashboardFilter: FC<Props> = ({ isEditMode }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const {
-        dashboard,
-        fieldsWithSuggestions,
-        dashboardFilters,
-        dashboardTiles,
-    } = useDashboardContext();
-    const { isLoading, data: filterableFields } =
-        useAvailableDashboardFilterTargets(dashboard, dashboardTiles);
-    const hasChartTiles =
-        dashboardTiles.filter(
-            (tile) => tile.type === DashboardTileTypes.SAVED_CHART,
-        ).length >= 1;
+const DashboardFilter: FC<Props> = ({ isEditMode, activeTabUuid }) => {
+    const { track } = useTracking();
+    const { projectUuid } = useParams<{ projectUuid: string }>();
+    const [openPopoverId, setPopoverId] = useState<string>();
+
+    const project = useProject(projectUuid);
+
+    const allFilters = useDashboardContext((c) => c.allFilters);
+    const allFilterableFieldsMap = useDashboardContext(
+        (c) => c.allFilterableFieldsMap,
+    );
+    const addDimensionDashboardFilter = useDashboardContext(
+        (c) => c.addDimensionDashboardFilter,
+    );
+    const hasChartTiles = useDashboardContext((c) => c.hasChartTiles);
+
+    const handleSaveNew = useCallback(
+        (
+            value: DashboardFilterRule<
+                FilterOperator,
+                DashboardFieldTarget,
+                any,
+                any
+            >,
+        ) => {
+            track({
+                name: EventName.ADD_FILTER_CLICKED,
+                properties: {
+                    mode: isEditMode ? 'edit' : 'viewer',
+                },
+            });
+            addDimensionDashboardFilter(value, !isEditMode);
+        },
+        [addDimensionDashboardFilter, isEditMode, track],
+    );
+
+    const handlePopoverOpen = useCallback((id: string) => {
+        setPopoverId(id);
+    }, []);
+
+    const handlePopoverClose = useCallback(() => {
+        setPopoverId(undefined);
+    }, []);
+
+    if (!hasChartTiles) return null;
+
     return (
-        <FiltersProvider fieldsMap={fieldsWithSuggestions}>
-            <DashboardFilterWrapper>
-                <TriggerWrapper
-                    content={
-                        <FilterSearch
-                            isEditMode={isEditMode}
-                            fields={filterableFields}
-                            onClose={() => setIsOpen(false)}
-                        />
-                    }
-                    interactionKind="click"
-                    popoverClassName={Classes.POPOVER2_CONTENT_SIZING}
-                    isOpen={isOpen}
-                    onInteraction={setIsOpen}
-                    position="bottom-right"
-                    lazy={false}
-                    disabled={!hasChartTiles || isLoading}
-                >
-                    <Tooltip2
-                        content={
-                            <Tooltip>
-                                Only filters added in <b>'edit'</b> mode will be
-                                saved
-                            </Tooltip>
-                        }
-                        placement="bottom"
-                        interactionKind="hover"
-                        disabled={isOpen || isEditMode}
-                    >
-                        <FilterTrigger
-                            minimal
-                            icon="filter-list"
-                            loading={isLoading}
-                            disabled={!hasChartTiles || isLoading}
-                        >
-                            Add filter
-                        </FilterTrigger>
-                    </Tooltip2>
-                </TriggerWrapper>
-                {dashboardFilters && <ActiveFilters />}
-            </DashboardFilterWrapper>
+        <FiltersProvider<Record<string, FilterableDimension>>
+            projectUuid={projectUuid}
+            itemsMap={allFilterableFieldsMap}
+            startOfWeek={
+                project.data?.warehouseConnection?.startOfWeek ?? undefined
+            }
+            dashboardFilters={allFilters}
+        >
+            <Flex gap="xs" wrap="wrap" mb="xs">
+                <Filter
+                    isCreatingNew
+                    isEditMode={isEditMode}
+                    openPopoverId={openPopoverId}
+                    activeTabUuid={activeTabUuid}
+                    onPopoverOpen={handlePopoverOpen}
+                    onPopoverClose={handlePopoverClose}
+                    onSave={handleSaveNew}
+                />
+
+                <ActiveFilters
+                    isEditMode={isEditMode}
+                    activeTabUuid={activeTabUuid}
+                    openPopoverId={openPopoverId}
+                    onPopoverOpen={handlePopoverOpen}
+                    onPopoverClose={handlePopoverClose}
+                />
+            </Flex>
         </FiltersProvider>
     );
 };

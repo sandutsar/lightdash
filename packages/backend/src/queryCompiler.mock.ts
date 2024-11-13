@@ -7,7 +7,8 @@ import {
     MetricQuery,
     MetricType,
     SupportedDbtAdapter,
-} from 'common';
+    WarehouseClient,
+} from '@lightdash/common';
 import { emptyTable } from './queryBuilder.mock';
 
 const DIMENSION: CompiledDimension = {
@@ -20,6 +21,7 @@ const DIMENSION: CompiledDimension = {
     hidden: false,
     sql: '${TABLE}.dim_1',
     compiledSql: '`some`.`table1`.`dim_1`',
+    tablesReferences: ['table1'],
 };
 
 export const EXPLORE: Pick<Explore, 'targetDatabase' | 'tables'> = {
@@ -35,6 +37,7 @@ export const EXPLORE: Pick<Explore, 'targetDatabase' | 'tables'> = {
 };
 
 export const METRIC_QUERY_NO_CALCS: MetricQuery = {
+    exploreName: 'table1',
     dimensions: ['table1_dim_1', 'table_2_dim_2'],
     metrics: ['table_3_metric_1', 'table55_metric__23_1'],
     filters: {},
@@ -83,6 +86,7 @@ export const METRIC_QUERY_VALID_REFERENCES_COMPILED: CompiledMetricQuery = {
             compiledSql: 'metric reference "table_3_metric_1"',
         },
     ],
+    compiledCustomDimensions: [],
 };
 
 export const METRIC_QUERY_MISSING_REFERENCE: MetricQuery = {
@@ -138,11 +142,20 @@ export const METRIC_QUERY_WITH_ADDITIONAL_METRICS_COMPILED: CompiledMetricQuery 
                 label: 'Additional metric 1',
                 tableLabel: 'table1',
                 hidden: false,
-                compiledSql: 'COUNT(table1.dim_1)',
+                compiledSql: 'COUNT("table1".dim_1)',
+                tablesReferences: ['table1'],
                 fieldType: FieldType.METRIC,
                 round: undefined,
+                percentile: undefined,
+                compact: undefined,
                 source: undefined,
+                showUnderlyingValues: undefined,
                 format: undefined,
+                filters: [],
+                requiredAttributes: undefined,
+                dimensionReference: undefined,
+                groups: [],
             },
         ],
+        compiledCustomDimensions: [],
     };

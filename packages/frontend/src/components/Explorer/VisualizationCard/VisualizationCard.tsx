@@ -1,253 +1,225 @@
 import {
-    Button,
-    ButtonGroup,
-    Card,
-    Collapse,
-    Divider,
-    H5,
-    Menu,
-    MenuItem,
-} from '@blueprintjs/core';
-import { Popover2 } from '@blueprintjs/popover2';
-import { ChartType } from 'common';
-import { FC, useState } from 'react';
-import {
-    useAddVersionMutation,
-    useDuplicateMutation,
-} from '../../../hooks/useSavedQuery';
+    ECHARTS_DEFAULT_COLORS,
+    getHiddenTableFields,
+    NotFoundError,
+} from '@lightdash/common';
+import { useDisclosure } from '@mantine/hooks';
+import { memo, useCallback, useMemo, useState, type FC } from 'react';
+import { downloadCsv } from '../../../api/csv';
+import { ErrorBoundary } from '../../../features/errorBoundary';
+import { type EChartSeries } from '../../../hooks/echarts/useEchartsCartesianConfig';
+import { uploadGsheet } from '../../../hooks/gdrive/useGdrive';
+import { useOrganization } from '../../../hooks/organization/useOrganization';
+import { useExplore } from '../../../hooks/useExplore';
+import { useApp } from '../../../providers/AppProvider';
 import {
     ExplorerSection,
-    useExplorer,
+    useExplorerContext,
 } from '../../../providers/ExplorerProvider';
-import BigNumberConfigPanel from '../../BigNumberConfig';
-import ChartConfigPanel from '../../ChartConfigPanel';
 import { ChartDownloadMenu } from '../../ChartDownload';
-import DeleteActionModal from '../../common/modal/DeleteActionModal';
+import CollapsableCard from '../../common/CollapsableCard';
 import LightdashVisualization from '../../LightdashVisualization';
 import VisualizationProvider from '../../LightdashVisualization/VisualizationProvider';
-import AddTilesToDashboardModal from '../../SavedDashboards/AddTilesToDashboardModal';
-import CreateSavedQueryModal from '../../SavedQueries/CreateSavedQueryModal';
-import VisualizationCardOptions from '../VisualizationCardOptions';
+import { type EchartSeriesClickEvent } from '../../SimpleChart';
+import { SeriesContextMenu } from './SeriesContextMenu';
+import VisualizationSidebar from './VisualizationSidebar';
 
-const VisualizationCard: FC = () => {
-    const [isQueryModalOpen, setIsQueryModalOpen] = useState<boolean>(false);
-    const [isAddToDashboardModalOpen, setIsAddToDashboardModalOpen] =
-        useState<boolean>(false);
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] =
-        useState<boolean>(false);
-    const {
-        state: {
-            unsavedChartVersion,
-            hasUnsavedChanges,
-            savedChart,
-            expandedSections,
-        },
-        queryResults,
-        actions: {
-            setPivotFields,
-            setChartType,
-            setChartConfig,
-            toggleExpandedSection,
-        },
-    } = useExplorer();
-    const update = useAddVersionMutation();
-    const vizIsOpen = expandedSections.includes(ExplorerSection.VISUALIZATION);
-    const chartId = savedChart?.uuid || '';
-    const { mutate: duplicateChart } = useDuplicateMutation(chartId);
+export type EchartsClickEvent = {
+    event: EchartSeriesClickEvent;
+    dimensions: string[];
+    series: EChartSeries[];
+};
 
-    const handleSavedQueryUpdate = () => {
-        if (savedChart?.uuid && unsavedChartVersion) {
-            update.mutate({
-                uuid: savedChart.uuid,
-                payload: unsavedChartVersion,
+const VisualizationCard: FC<{
+    projectUuid?: string;
+    isProjectPreview?: boolean;
+}> = memo(({ projectUuid: fallBackUUid, isProjectPreview }) => {
+    const { health } = useApp();
+    const { data: org } = useOrganization();
+
+    const savedChart = useExplorerContext(
+        (context) => context.state.savedChart,
+    );
+
+    const isLoadingQueryResults = useExplorerContext(
+        (context) => context.queryResults.isLoading,
+    );
+    const queryResults = useExplorerContext(
+        (context) => context.queryResults.data,
+    );
+    const setPivotFields = useExplorerContext(
+        (context) => context.actions.setPivotFields,
+    );
+    const setChartType = useExplorerContext(
+        (context) => context.actions.setChartType,
+    );
+    const setChartConfig = useExplorerContext(
+        (context) => context.actions.setChartConfig,
+    );
+    const expandedSections = useExplorerContext(
+        (context) => context.state.expandedSections,
+    );
+    const isEditMode = useExplorerContext(
+        (context) => context.state.isEditMode,
+    );
+    const toggleExpandedSection = useExplorerContext(
+        (context) => context.actions.toggleExpandedSection,
+    );
+    const unsavedChartVersion = useExplorerContext(
+        (context) => context.state.unsavedChartVersion,
+    );
+    const tableCalculationsMetadata = useExplorerContext(
+        (context) => context.state.metadata?.tableCalculations,
+    );
+
+    const isOpen = useMemo(
+        () => expandedSections.includes(ExplorerSection.VISUALIZATION),
+        [expandedSections],
+    );
+    const toggleSection = useCallback(
+        () => toggleExpandedSection(ExplorerSection.VISUALIZATION),
+        [toggleExpandedSection],
+    );
+    const projectUuid = useExplorerContext(
+        (context) => context.state.savedChart?.projectUuid || fallBackUUid,
+    );
+
+    const { data: explore } = useExplore(unsavedChartVersion.tableName);
+
+    const [echartsClickEvent, setEchartsClickEvent] =
+        useState<EchartsClickEvent>();
+
+    const [isSidebarOpen, { open: openSidebar, close: closeSidebar }] =
+        useDisclosure();
+
+    const onSeriesContextMenu = useCallback(
+        (e: EchartSeriesClickEvent, series: EChartSeries[]) => {
+            setEchartsClickEvent({
+                event: e,
+                dimensions: unsavedChartVersion.metricQuery.dimensions,
+                series,
             });
+        },
+        [unsavedChartVersion],
+    );
+
+    if (!unsavedChartVersion.tableName) {
+        return <CollapsableCard title="Charts" disabled />;
+    }
+
+    const getCsvLink = async (
+        csvLimit: number | null,
+        onlyRaw: boolean,
+        showTableNames: boolean,
+        columnOrder: string[],
+        customLabels?: Record<string, string>,
+    ) => {
+        if (explore?.name && unsavedChartVersion?.metricQuery && projectUuid) {
+            const csvResponse = await downloadCsv({
+                projectUuid,
+                tableId: explore?.name,
+                query: unsavedChartVersion.metricQuery,
+                csvLimit,
+                onlyRaw,
+                showTableNames,
+                columnOrder: columnOrder,
+                customLabels,
+                hiddenFields: getHiddenTableFields(
+                    unsavedChartVersion.chartConfig,
+                ),
+            });
+            return csvResponse;
         }
+        throw new NotFoundError('no metric query defined');
+    };
+    const getGsheetLink = async (
+        columnOrder: string[],
+        showTableNames: boolean,
+        customLabels?: Record<string, string>,
+    ) => {
+        if (explore?.name && unsavedChartVersion?.metricQuery && projectUuid) {
+            const gsheetResponse = await uploadGsheet({
+                projectUuid,
+                exploreId: explore?.name,
+                metricQuery: unsavedChartVersion?.metricQuery,
+                columnOrder,
+                showTableNames,
+                customLabels,
+                hiddenFields: getHiddenTableFields(
+                    unsavedChartVersion.chartConfig,
+                ),
+            });
+            return gsheetResponse;
+        }
+        throw new NotFoundError('no metric query defined');
     };
 
+    if (health.isInitialLoading || !health.data) {
+        return null;
+    }
+
     return (
-        <>
-            <Card style={{ padding: 5, overflowY: 'scroll' }} elevation={1}>
-                <VisualizationProvider
-                    initialChartConfig={unsavedChartVersion.chartConfig}
-                    chartType={unsavedChartVersion.chartConfig.type}
-                    initialPivotDimensions={
-                        unsavedChartVersion.pivotConfig?.columns
-                    }
-                    tableName={unsavedChartVersion.tableName}
-                    resultsData={queryResults.data}
-                    isLoading={queryResults.isLoading}
-                    onChartConfigChange={setChartConfig}
-                    onChartTypeChange={setChartType}
-                    onPivotDimensionsChange={setPivotFields}
-                    columnOrder={unsavedChartVersion.tableConfig.columnOrder}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                            }}
-                        >
-                            <Button
-                                icon={
-                                    vizIsOpen ? 'chevron-down' : 'chevron-right'
-                                }
-                                minimal
-                                onClick={() =>
-                                    toggleExpandedSection(
-                                        ExplorerSection.VISUALIZATION,
-                                    )
-                                }
-                            />
-                            <H5 style={{ margin: 0, padding: 0 }}>Charts</H5>
-                        </div>
-                        {vizIsOpen && (
-                            <div
-                                style={{
-                                    display: 'inline-flex',
-                                    flexWrap: 'wrap',
-                                    gap: '10px',
-                                    marginRight: '10px',
-                                }}
-                            >
-                                <VisualizationCardOptions />
-                                {unsavedChartVersion.chartConfig.type ===
-                                ChartType.BIG_NUMBER ? (
-                                    <BigNumberConfigPanel />
-                                ) : (
-                                    <ChartConfigPanel />
-                                )}
-                                <ChartDownloadMenu />
-                                <ButtonGroup>
-                                    <Button
-                                        text={
-                                            savedChart
-                                                ? 'Save changes'
-                                                : 'Save chart'
+        <ErrorBoundary>
+            <VisualizationProvider
+                chartConfig={unsavedChartVersion.chartConfig}
+                initialPivotDimensions={
+                    unsavedChartVersion.pivotConfig?.columns
+                }
+                resultsData={queryResults}
+                isLoading={isLoadingQueryResults}
+                columnOrder={unsavedChartVersion.tableConfig.columnOrder}
+                onSeriesContextMenu={onSeriesContextMenu}
+                pivotTableMaxColumnLimit={health.data.pivotTable.maxColumnLimit}
+                savedChartUuid={isEditMode ? undefined : savedChart?.uuid}
+                onChartConfigChange={setChartConfig}
+                onChartTypeChange={setChartType}
+                onPivotDimensionsChange={setPivotFields}
+                colorPalette={org?.chartColors ?? ECHARTS_DEFAULT_COLORS}
+                tableCalculationsMetadata={tableCalculationsMetadata}
+            >
+                <CollapsableCard
+                    title="Chart"
+                    isOpen={isOpen}
+                    isVisualizationCard
+                    onToggle={toggleSection}
+                    rightHeaderElement={
+                        isOpen && (
+                            <>
+                                {isEditMode ? (
+                                    <VisualizationSidebar
+                                        chartType={
+                                            unsavedChartVersion.chartConfig.type
                                         }
-                                        disabled={
-                                            !unsavedChartVersion.tableName ||
-                                            !hasUnsavedChanges
-                                        }
-                                        onClick={
-                                            savedChart
-                                                ? handleSavedQueryUpdate
-                                                : () =>
-                                                      setIsQueryModalOpen(true)
-                                        }
+                                        savedChart={savedChart}
+                                        isProjectPreview={isProjectPreview}
+                                        isOpen={isSidebarOpen}
+                                        onOpen={openSidebar}
+                                        onClose={closeSidebar}
                                     />
-                                    {savedChart && (
-                                        <Popover2
-                                            placement="bottom"
-                                            disabled={
-                                                !unsavedChartVersion.tableName
-                                            }
-                                            content={
-                                                <Menu>
-                                                    <MenuItem
-                                                        icon={
-                                                            hasUnsavedChanges
-                                                                ? 'add'
-                                                                : 'duplicate'
-                                                        }
-                                                        text={
-                                                            hasUnsavedChanges
-                                                                ? 'Save chart as'
-                                                                : 'Duplicate'
-                                                        }
-                                                        onClick={() => {
-                                                            if (
-                                                                savedChart?.uuid &&
-                                                                hasUnsavedChanges
-                                                            ) {
-                                                                setIsQueryModalOpen(
-                                                                    true,
-                                                                );
-                                                            } else {
-                                                                duplicateChart(
-                                                                    chartId,
-                                                                );
-                                                            }
-                                                        }}
-                                                    />
-                                                    <MenuItem
-                                                        icon="control"
-                                                        text="Add to dashboard"
-                                                        onClick={() =>
-                                                            setIsAddToDashboardModalOpen(
-                                                                true,
-                                                            )
-                                                        }
-                                                    />
-                                                    <Divider />
-                                                    <MenuItem
-                                                        icon="trash"
-                                                        text="Delete"
-                                                        intent="danger"
-                                                        onClick={() =>
-                                                            setIsDeleteDialogOpen(
-                                                                true,
-                                                            )
-                                                        }
-                                                    />
-                                                </Menu>
-                                            }
-                                        >
-                                            <Button
-                                                icon="more"
-                                                disabled={
-                                                    !unsavedChartVersion.tableName
-                                                }
-                                            />
-                                        </Popover2>
-                                    )}
-                                </ButtonGroup>
-                            </div>
-                        )}
-                    </div>
-                    <Collapse className="explorer-chart" isOpen={vizIsOpen}>
-                        <div
-                            style={{ height: '300px' }}
-                            className="cohere-block"
-                        >
-                            <LightdashVisualization />
-                        </div>
-                    </Collapse>
-                </VisualizationProvider>
-            </Card>
-            {unsavedChartVersion && (
-                <CreateSavedQueryModal
-                    isOpen={isQueryModalOpen}
-                    savedData={unsavedChartVersion}
-                    onClose={() => setIsQueryModalOpen(false)}
-                />
-            )}
-            {savedChart && (
-                <AddTilesToDashboardModal
-                    isOpen={isAddToDashboardModalOpen}
-                    savedChart={savedChart}
-                    onClose={() => setIsAddToDashboardModalOpen(false)}
-                />
-            )}
-            {isDeleteDialogOpen && savedChart?.uuid && (
-                <DeleteActionModal
-                    isOpen={isDeleteDialogOpen}
-                    onClose={() => setIsDeleteDialogOpen(false)}
-                    uuid={savedChart.uuid}
-                    name={savedChart.name}
-                    isChart
-                    isExplorer
-                />
-            )}
-        </>
+                                ) : null}
+
+                                <ChartDownloadMenu
+                                    getCsvLink={getCsvLink}
+                                    projectUuid={projectUuid!}
+                                    getGsheetLink={getGsheetLink}
+                                />
+                            </>
+                        )
+                    }
+                >
+                    <LightdashVisualization
+                        className="sentry-block ph-no-capture"
+                        data-testid="visualization"
+                    />
+                    <SeriesContextMenu
+                        echartSeriesClickEvent={echartsClickEvent?.event}
+                        dimensions={echartsClickEvent?.dimensions}
+                        series={echartsClickEvent?.series}
+                    />
+                </CollapsableCard>
+            </VisualizationProvider>
+        </ErrorBoundary>
     );
-};
+});
 
 export default VisualizationCard;

@@ -1,74 +1,267 @@
-import { Ability, AbilityBuilder, ForcedSubject } from '@casl/ability';
-import { Organization } from '../types/organization';
+import { type AbilityBuilder } from '@casl/ability';
 import {
-    OrganizationMemberProfile,
-    OrganizationMemberRole,
+    type OrganizationMemberProfile,
+    type OrganizationMemberRole,
 } from '../types/organizationMemberProfile';
+import { ProjectType } from '../types/projects';
+import { SpaceMemberRole } from '../types/space';
+import { type MemberAbility } from './types';
 
-type Action = 'manage' | 'update' | 'view' | 'create' | 'delete';
-
-type Subject =
-    | Organization
-    | OrganizationMemberProfile
-    | 'Organization'
-    | 'OrganizationMemberProfile'
-    | 'Dashboard'
-    | 'SavedChart'
-    | 'Project'
-    | 'InviteLink'
-    | 'all';
-
-type PossibleAbilities = [
-    Action,
-    Subject | ForcedSubject<Exclude<Subject, 'all'>>,
-];
-
-export type OrganizationMemberAbility = Ability<PossibleAbilities>;
-
-const organizationMemberAbilities: Record<
+// eslint-disable-next-line import/prefer-default-export
+export const organizationMemberAbilities: Record<
     OrganizationMemberRole,
     (
         member: Pick<
             OrganizationMemberProfile,
-            'role' | 'organizationUuid' | 'userUuid'
+            'organizationUuid' | 'userUuid'
         >,
-        builder: Pick<AbilityBuilder<OrganizationMemberAbility>, 'can'>,
+        builder: Pick<AbilityBuilder<MemberAbility>, 'can'>,
     ) => void
 > = {
+    member(member, { can }) {
+        can('view', 'OrganizationMemberProfile', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'CsvJobResult', {
+            createdByUserUuid: member.userUuid,
+        });
+        can('view', 'PinnedItems', {
+            organizationUuid: member.organizationUuid,
+        });
+    },
     viewer(member, { can }) {
-        can('view', 'Dashboard');
-        can('view', 'SavedChart');
-        can('view', 'Project');
+        organizationMemberAbilities.member(member, { can });
+        can('view', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+            isPrivate: false,
+        });
+        can('view', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+            isPrivate: false,
+        });
+        can('view', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: { userUuid: member.userUuid },
+            },
+        });
+        can('view', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: { userUuid: member.userUuid },
+            },
+        });
+        can('view', 'Space', {
+            organizationUuid: member.organizationUuid,
+            isPrivate: false,
+        });
+        can('view', 'Space', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: { userUuid: member.userUuid },
+            },
+        });
+        can('view', 'Project', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'Organization', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'ExportCsv', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'DashboardComments', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'Tags', {
+            organizationUuid: member.organizationUuid,
+        });
+    },
+    interactive_viewer(member, { can }) {
+        organizationMemberAbilities.viewer(member, { can });
+        can('create', 'Job');
+        can('view', 'Job', { userUuid: member.userUuid });
+        can('view', 'UnderlyingData', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'SemanticViewer', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'ChangeCsvResults', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Explore', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('create', 'ScheduledDeliveries', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('create', 'DashboardComments', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.EDITOR,
+                },
+            },
+        });
+        can('manage', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.EDITOR,
+                },
+            },
+        });
+
+        can('manage', 'SemanticViewer', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.EDITOR,
+                },
+            },
+        });
+        can('manage', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.ADMIN,
+                },
+            },
+        });
+        can('manage', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.ADMIN,
+                },
+            },
+        });
+        can('manage', 'Space', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.ADMIN,
+                },
+            },
+        });
     },
     editor(member, { can }) {
-        organizationMemberAbilities.viewer(member, { can });
-        can('manage', 'Project');
-        can('manage', 'Dashboard');
-        can('manage', 'SavedChart');
-        can('manage', 'InviteLink');
+        organizationMemberAbilities.interactive_viewer(member, { can });
+        can('create', 'Space', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Job');
+        can('manage', 'PinnedItems', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('update', 'Project', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'ScheduledDeliveries', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'DashboardComments', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'SemanticViewer', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Tags', {
+            organizationUuid: member.organizationUuid,
+        });
+    },
+    developer(member, { can }) {
+        organizationMemberAbilities.editor(member, { can });
+        can('manage', 'VirtualView', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'CustomSql', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'SqlRunner', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Validation', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('promote', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.EDITOR,
+                },
+            },
+        });
+        can('promote', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+            access: {
+                $elemMatch: {
+                    userUuid: member.userUuid,
+                    role: SpaceMemberRole.EDITOR,
+                },
+            },
+        });
+        can('manage', 'CompileProject', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('create', 'Project', {
+            organizationUuid: member.organizationUuid,
+            type: ProjectType.PREVIEW,
+        });
+        can('delete', 'Project', {
+            organizationUuid: member.organizationUuid,
+            type: ProjectType.PREVIEW,
+        });
     },
     admin(member, { can }) {
-        organizationMemberAbilities.editor(member, { can });
+        organizationMemberAbilities.developer(member, { can });
+        can('manage', 'Dashboard', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Space', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'SavedChart', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('create', 'Project', {
+            organizationUuid: member.organizationUuid,
+            type: { $in: [ProjectType.DEFAULT, ProjectType.PREVIEW] },
+        });
+        can('delete', 'Project', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Project', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'InviteLink', {
+            organizationUuid: member.organizationUuid,
+        });
         can('manage', 'Organization', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('view', 'Analytics', {
             organizationUuid: member.organizationUuid,
         });
         can('manage', 'OrganizationMemberProfile', {
             organizationUuid: member.organizationUuid,
         });
+        can('manage', 'PinnedItems', {
+            organizationUuid: member.organizationUuid,
+        });
+        can('manage', 'Group', {
+            organizationUuid: member.organizationUuid,
+        });
     },
-};
-
-export const defineAbilityForOrganizationMember = (
-    member:
-        | Pick<
-              OrganizationMemberProfile,
-              'role' | 'organizationUuid' | 'userUuid'
-          >
-        | undefined,
-): OrganizationMemberAbility => {
-    const builder = new AbilityBuilder<OrganizationMemberAbility>(Ability);
-    if (member) {
-        organizationMemberAbilities[member.role](member, builder);
-    }
-    return builder.build();
 };

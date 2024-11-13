@@ -1,17 +1,17 @@
-import { NotExistsError, OnbordingRecord } from 'common';
+import { NotExistsError, OnbordingRecord } from '@lightdash/common';
 import { Knex } from 'knex';
 import { OnboardingTableName } from '../../database/entities/onboarding';
 import { OrganizationTableName } from '../../database/entities/organizations';
 
-type ModelDependencies = {
+type OnboardingModelArguments = {
     database: Knex;
 };
 
 export class OnboardingModel {
     private database: Knex;
 
-    constructor(deps: ModelDependencies) {
-        this.database = deps.database;
+    constructor(args: OnboardingModelArguments) {
+        this.database = args.database;
     }
 
     async getByOrganizationUuid(

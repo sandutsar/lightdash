@@ -1,151 +1,322 @@
-import { Button } from '@blueprintjs/core';
-import { WarehouseTypes } from 'common';
-import React, { FC } from 'react';
+import { WarehouseTypes } from '@lightdash/common';
+import {
+    Anchor,
+    FileInput,
+    NumberInput,
+    Select,
+    Stack,
+    TextInput,
+} from '@mantine/core';
+import { useState, type FC } from 'react';
+import { Controller, useFormContext } from 'react-hook-form';
 import { useToggle } from 'react-use';
 import { hasNoWhiteSpaces } from '../../../utils/fieldValidators';
-import FileInput from '../../ReactHookForm/FileInput';
 import FormSection from '../../ReactHookForm/FormSection';
 import Input from '../../ReactHookForm/Input';
-import NumericInput from '../../ReactHookForm/NumericInput';
-import SelectField from '../../ReactHookForm/Select';
+import FormCollapseButton from '../FormCollapseButton';
 import { useProjectFormContext } from '../ProjectFormProvider';
+import StartOfWeekSelect from './Inputs/StartOfWeekSelect';
 
+export const BigQuerySchemaInput: FC<{
+    disabled: boolean;
+}> = ({ disabled }) => {
+    return (
+        <Input
+            name="warehouse.dataset"
+            label="Data set"
+            labelHelp={
+                <p>
+                    This is the name of your dbt dataset: the dataset in your
+                    warehouse where the output of your dbt models is written to.
+                    If you're not sure what this is, check out the
+                    <b> dataset </b>
+                    value{' '}
+                    <Anchor
+                        target="_blank"
+                        href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#:~:text=This%20connection%20method%20requires%20local%20OAuth%20via%20gcloud."
+                        rel="noreferrer"
+                    >
+                        you've set in your dbt <b>profiles.yml</b> file
+                    </Anchor>
+                    .
+                </p>
+            }
+            documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#data-set"
+            rules={{
+                required: 'Required field',
+                validate: {
+                    hasNoWhiteSpaces: hasNoWhiteSpaces('Data set'),
+                },
+            }}
+            disabled={disabled}
+        />
+    );
+};
 const BigQueryForm: FC<{
     disabled: boolean;
 }> = ({ disabled }) => {
     const [isOpen, toggleOpen] = useToggle(false);
+    const { register } = useFormContext();
+    const [temporaryFile, setTemporaryFile] = useState<File>();
     const { savedProject } = useProjectFormContext();
     const requireSecrets: boolean =
         savedProject?.warehouseConnection?.type !== WarehouseTypes.BIGQUERY;
+
     return (
         <>
-            <Input
-                name="warehouse.project"
-                label="Project"
-                documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#project"
-                rules={{
-                    required: 'Required field',
-                    validate: {
-                        hasNoWhiteSpaces: hasNoWhiteSpaces('Project'),
-                    },
-                }}
-                disabled={disabled}
-            />
-            <Input
-                name="warehouse.dataset"
-                label="Data set"
-                documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#data-set"
-                rules={{
-                    required: 'Required field',
-                    validate: {
-                        hasNoWhiteSpaces: hasNoWhiteSpaces('Data set'),
-                    },
-                }}
-                disabled={disabled}
-            />
-            <Input
-                name="warehouse.location"
-                label="Location"
-                documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#location"
-                rules={{
-                    required: 'Required field',
-                    validate: {
-                        hasNoWhiteSpaces: hasNoWhiteSpaces('Location'),
-                    },
-                }}
-                disabled={disabled}
-            />
-            <FileInput
-                name="warehouse.keyfileContents"
-                label="Key File"
-                documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#key-file"
-                rules={{
-                    required: requireSecrets ? 'Required field' : undefined,
-                }}
-                fileInputProps={{
-                    text: !requireSecrets ? '**************' : undefined,
-                }}
-                acceptedTypes="application/json"
-                disabled={disabled}
-            />
-            <FormSection isOpen={isOpen} name="advanced">
-                <NumericInput
-                    name="warehouse.threads"
-                    label="Threads"
-                    documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#threads"
-                    rules={{
-                        required: 'Required field',
-                    }}
-                    disabled={disabled}
-                    defaultValue={1}
-                />
-                <NumericInput
-                    name="warehouse.timeoutSeconds"
-                    label="Timeout in seconds"
-                    documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#timeout-in-seconds"
-                    rules={{
-                        required: 'Required field',
-                    }}
-                    disabled={disabled}
-                    defaultValue={300}
-                />
-                <SelectField
-                    name="warehouse.priority"
-                    label="Priority"
-                    documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#timeout-in-seconds"
-                    options={[
-                        {
-                            value: 'interactive',
-                            label: 'interactive',
+            <Stack style={{ marginTop: '8px' }}>
+                <TextInput
+                    label="Project"
+                    description="This is the GCP project ID."
+                    required
+                    {...register('warehouse.project', {
+                        validate: {
+                            hasNoWhiteSpaces: hasNoWhiteSpaces('Project'),
                         },
-                        {
-                            value: 'batch',
-                            label: 'batch',
-                        },
-                    ]}
-                    rules={{
-                        required: 'Required field',
-                    }}
+                    })}
                     disabled={disabled}
-                    defaultValue="interactive"
+                    labelProps={{ style: { marginTop: '8px' } }}
                 />
-                <NumericInput
-                    name="warehouse.retries"
-                    label="Retries"
-                    documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#retries"
-                    rules={{
-                        required: 'Required field',
-                    }}
-                    defaultValue={3}
-                />
-                <NumericInput
-                    name="warehouse.maximumBytesBilled"
-                    label="Maximum bytes billed"
-                    documentationUrl="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#maximum-bytes-billed"
-                    rules={{
-                        required: 'Required field',
-                    }}
-                    disabled={disabled}
-                    defaultValue={1000000000}
-                />
-            </FormSection>
 
-            <div
-                style={{
-                    display: 'flex',
-                    marginTop: 20,
-                    justifyContent: 'flex-end',
-                }}
-            >
-                <Button
-                    minimal
-                    text={`${isOpen ? 'Hide' : 'Show'} advanced fields`}
-                    onClick={toggleOpen}
-                    style={{
-                        marginRight: 10,
-                    }}
+                <TextInput
+                    label="Location"
+                    description={
+                        <p>
+                            The location of BigQuery datasets. You can see more
+                            details in{' '}
+                            <Anchor
+                                target="_blank"
+                                href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#dataset-locations"
+                                rel="noreferrer"
+                            >
+                                dbt documentation
+                            </Anchor>
+                            .
+                        </p>
+                    }
+                    {...register('warehouse.location', {
+                        validate: {
+                            hasNoWhiteSpaces: hasNoWhiteSpaces('Location'),
+                        },
+                        setValueAs: (value) =>
+                            value === '' ? undefined : value,
+                    })}
+                    disabled={disabled}
                 />
-            </div>
+
+                <Controller
+                    name="warehouse.keyfileContents"
+                    render={({ field }) => (
+                        <FileInput
+                            {...field}
+                            label="Key File"
+                            // FIXME: until mantine 7.4: https://github.com/mantinedev/mantine/issues/5401#issuecomment-1874906064
+                            // @ts-ignore
+                            placeholder={
+                                !requireSecrets
+                                    ? '**************'
+                                    : 'Choose file...'
+                            }
+                            description={
+                                <p>
+                                    This is the JSON key file. You can see{' '}
+                                    <Anchor
+                                        target="_blank"
+                                        href="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#key-file"
+                                        rel="noreferrer"
+                                    >
+                                        how to create a key here
+                                    </Anchor>
+                                    .
+                                </p>
+                            }
+                            {...register('warehouse.keyfileContents')}
+                            required={requireSecrets}
+                            accept="application/json"
+                            value={temporaryFile}
+                            onChange={(file) => {
+                                if (file) {
+                                    const fileReader = new FileReader();
+                                    fileReader.onload = function (event) {
+                                        const contents = event.target?.result;
+                                        if (typeof contents === 'string') {
+                                            setTemporaryFile(file);
+                                            field.onChange(
+                                                JSON.parse(contents),
+                                            );
+                                        } else {
+                                            field.onChange(null);
+                                        }
+                                    };
+                                    fileReader.readAsText(file);
+                                }
+                                field.onChange(null);
+                            }}
+                            disabled={disabled}
+                        />
+                    )}
+                />
+
+                <FormSection isOpen={isOpen} name="advanced">
+                    <Stack style={{ marginTop: '8px' }}>
+                        <TextInput
+                            label="Execution project"
+                            description={
+                                <p>
+                                    You may specify a project to bill for query
+                                    execution, instead of the project/database
+                                    where you materialize most resources. You
+                                    can see more details in{' '}
+                                    <Anchor
+                                        target="_blank"
+                                        href="https://docs.getdbt.com/docs/core/connect-data-platform/bigquery-setup#execution-project"
+                                        rel="noreferrer"
+                                    >
+                                        dbt documentation
+                                    </Anchor>
+                                    .
+                                </p>
+                            }
+                            {...register('warehouse.executionProject', {
+                                validate: {
+                                    hasNoWhiteSpaces:
+                                        hasNoWhiteSpaces('Execution project'),
+                                },
+                                setValueAs: (value) =>
+                                    value === '' ? undefined : value,
+                            })}
+                            disabled={disabled}
+                        />
+
+                        <Controller
+                            name="warehouse.timeoutSeconds"
+                            defaultValue={300}
+                            render={({ field }) => (
+                                <NumberInput
+                                    {...field}
+                                    label="Timeout in seconds"
+                                    description={
+                                        <p>
+                                            If a dbt model takes longer than
+                                            this timeout to complete, then
+                                            BigQuery may cancel the query. You
+                                            can see more details in{' '}
+                                            <Anchor
+                                                target="_blank"
+                                                href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#timeouts"
+                                                rel="noreferrer"
+                                            >
+                                                dbt documentation
+                                            </Anchor>
+                                            .
+                                        </p>
+                                    }
+                                    required
+                                    disabled={disabled}
+                                />
+                            )}
+                        />
+                        <Controller
+                            name="warehouse.priority"
+                            defaultValue="interactive"
+                            render={({ field }) => (
+                                <Select
+                                    label="Priority"
+                                    description={
+                                        <p>
+                                            The priority for the BigQuery jobs
+                                            that dbt executes. You can see more
+                                            details in{' '}
+                                            <Anchor
+                                                target="_blank"
+                                                href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#priority"
+                                                rel="noreferrer"
+                                            >
+                                                dbt documentation
+                                            </Anchor>
+                                            .
+                                        </p>
+                                    }
+                                    data={[
+                                        {
+                                            value: 'interactive',
+                                            label: 'interactive',
+                                        },
+                                        {
+                                            value: 'batch',
+                                            label: 'batch',
+                                        },
+                                    ]}
+                                    required
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    disabled={disabled}
+                                />
+                            )}
+                        />
+                        <Controller
+                            name="warehouse.retries"
+                            defaultValue={3}
+                            render={({ field }) => (
+                                <NumberInput
+                                    {...field}
+                                    label="Retries"
+                                    description={
+                                        <p>
+                                            The number of times dbt should retry
+                                            queries that result in unhandled
+                                            server errors You can see more
+                                            details in{' '}
+                                            <Anchor
+                                                target="_blank"
+                                                href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#retries"
+                                                rel="noreferrer"
+                                            >
+                                                dbt documentation
+                                            </Anchor>
+                                            .
+                                        </p>
+                                    }
+                                    required
+                                />
+                            )}
+                        />
+                        <Controller
+                            name="warehouse.maximumBytesBilled"
+                            defaultValue={1000000000}
+                            render={({ field }) => (
+                                <NumberInput
+                                    {...field}
+                                    label="Maximum bytes billed"
+                                    description={
+                                        <p>
+                                            When a value is configured, queries
+                                            executed by dbt will fail if they
+                                            exceed the configured maximum bytes
+                                            threshold. You can see more details
+                                            in{' '}
+                                            <Anchor
+                                                target="_blank"
+                                                href="https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#maximum-bytes-billed"
+                                                rel="noreferrer"
+                                            >
+                                                dbt documentation
+                                            </Anchor>
+                                            .
+                                        </p>
+                                    }
+                                    required
+                                    disabled={disabled}
+                                />
+                            )}
+                        />
+                        <StartOfWeekSelect disabled={disabled} />
+                    </Stack>
+                </FormSection>
+                <FormCollapseButton isSectionOpen={isOpen} onClick={toggleOpen}>
+                    Advanced configuration options
+                </FormCollapseButton>
+            </Stack>
         </>
     );
 };

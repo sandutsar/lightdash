@@ -1,26 +1,47 @@
-import { ProjectType, TableSelectionType } from 'common';
+import {
+    DbtProjectType,
+    ProjectType,
+    TableSelectionType,
+} from '@lightdash/common';
 import { Knex } from 'knex';
 
 export const ProjectTableName = 'projects';
 export const CachedExploresTableName = 'cached_explores';
+export const CachedExploreTableName = 'cached_explore';
 export const CachedWarehouseTableName = 'cached_warehouse';
 
-type DbProject = {
+export type DbProject = {
     project_id: number;
     project_uuid: string;
     name: string;
+    project_type: ProjectType;
     created_at: Date;
     organization_id: number;
-    dbt_connection_type: ProjectType | null;
+    dbt_connection_type: DbtProjectType | null;
     dbt_connection: Buffer | null;
     table_selection_type: TableSelectionType;
     table_selection_value: string[] | null;
+    copied_from_project_uuid: string | null;
+    dbt_version: string;
+    semantic_layer_connection: Buffer | null;
+    scheduler_timezone: string;
+    created_by_user_uuid: string | null;
 };
 
 type CreateDbProject = Pick<
     DbProject,
-    'name' | 'organization_id' | 'dbt_connection' | 'dbt_connection_type'
->;
+    | 'name'
+    | 'organization_id'
+    | 'project_type'
+    | 'dbt_connection'
+    | 'dbt_connection_type'
+    | 'copied_from_project_uuid'
+    | 'dbt_version'
+    | 'semantic_layer_connection'
+    | 'created_by_user_uuid'
+> & {
+    scheduler_timezone?: string; // On create it will default to 'UTC' as per migration
+};
 type UpdateDbProject = Partial<
     Pick<
         DbProject,
@@ -29,6 +50,10 @@ type UpdateDbProject = Partial<
         | 'dbt_connection_type'
         | 'table_selection_type'
         | 'table_selection_value'
+        | 'dbt_version'
+        | 'copied_from_project_uuid'
+        | 'semantic_layer_connection'
+        | 'scheduler_timezone'
     >
 >;
 
@@ -44,6 +69,19 @@ export type DbCachedExplores = {
 };
 
 export type CachedExploresTable = Knex.CompositeTableType<DbCachedExplores>;
+
+export type DbCachedExplore = {
+    cached_explore_uuid: string;
+    project_uuid: string;
+    name: string;
+    table_names: string[];
+    explore: any;
+};
+
+export type CachedExploreTable = Knex.CompositeTableType<
+    DbCachedExplore,
+    Omit<DbCachedExplore, 'cached_explore_uuid'>
+>;
 
 export type DbCachedWarehouse = {
     project_uuid: string;

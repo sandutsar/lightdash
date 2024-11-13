@@ -1,40 +1,80 @@
-import { LightdashMode } from 'common';
-import { LightdashConfig } from '../../config/parseConfig';
+import { HealthState, LightdashMode, SessionUser } from '@lightdash/common';
 
-export const BaseResponse = {
+export const BaseResponse: HealthState = {
     healthy: true,
     version: '0.1.0',
     mode: LightdashMode.DEFAULT,
     isAuthenticated: false,
+    requiresOrgRegistration: false,
     localDbtEnabled: true,
-    needsSetup: false,
-    needsProject: false,
+    siteUrl: 'https://test.lightdash.cloud',
+    staticIp: '',
+    customVisualizationsEnabled: false,
+    hasEmailClient: false,
+    hasExtendedUsageAnalytics: false,
+    hasGithub: false,
+    hasGroups: false,
+    hasHeadlessBrowser: false,
+    hasSlack: false,
     auth: {
         disablePasswordAuthentication: false,
         google: {
+            enabled: false,
             loginPath: '',
-            oauth2ClientId: '',
+            oauth2ClientId: undefined,
+            googleDriveApiKey: undefined,
+        },
+        okta: {
+            enabled: false,
+            loginPath: '',
+        },
+        oneLogin: {
+            enabled: false,
+            loginPath: '',
+        },
+        azuread: {
+            enabled: false,
+            loginPath: '',
+        },
+        oidc: {
+            enabled: false,
+            loginPath: '',
         },
     },
-    defaultProject: undefined,
-    latest: { version: '0.2.7' },
-    hasEmailClient: false,
-    siteUrl: undefined,
-    intercom: undefined,
-    cohere: undefined,
-    rudder: undefined,
-    sentry: undefined,
+    intercom: {
+        apiBase: '',
+        appId: '',
+    },
+    latest: {
+        version: '0.2.7',
+    },
+    pivotTable: {
+        maxColumnLimit: 0,
+    },
+    posthog: undefined,
+    pylon: {
+        appId: '',
+    },
+    query: {
+        csvCellsLimit: 100000,
+        maxLimit: 5000,
+    },
+    rudder: {
+        dataPlaneUrl: '',
+        writeKey: '',
+    },
+    sentry: {
+        environment: '',
+        frontend: {
+            dsn: '',
+        },
+        release: '',
+        tracesSampleRate: 0,
+        profilesSampleRate: 0,
+    },
 };
 
-export const Config = {
-    mode: LightdashMode.DEFAULT,
-    auth: {
-        disablePasswordAuthentication: false,
-        google: {
-            loginPath: '',
-            oauth2ClientId: '',
-            oauth2ClientSecret: '',
-            callbackPath: '',
-        },
-    },
-} as LightdashConfig;
+export const userMock = {
+    userUuid: 'uuid',
+    organizationUuid: 'orguuid',
+} as any as SessionUser;

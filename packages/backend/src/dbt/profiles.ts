@@ -1,15 +1,27 @@
-import { CreateWarehouseCredentials, WarehouseTypes } from 'common';
+import {
+    assertUnreachable,
+    CreateWarehouseCredentials,
+    WarehouseTypes,
+} from '@lightdash/common';
 import * as yaml from 'js-yaml';
 import path from 'path';
 
 export const LIGHTDASH_PROFILE_NAME = 'lightdash_profile';
 export const LIGHTDASH_TARGET_NAME = 'prod';
+const DEFAULT_THREADS = 1;
 
 const envVar = (v: string) => `LIGHTDASH_DBT_PROFILE_VAR_${v.toUpperCase()}`;
 const envVarReference = (v: string) => `{{ env_var('${envVar(v)}') }}`;
+
+type CredentialsTarget = {
+    target: Record<string, any>;
+    environment: Record<string, string>;
+    files?: Record<string, string>;
+};
 const credentialsTarget = (
     credentials: CreateWarehouseCredentials,
-): { target: Record<string, any>; environment: Record<string, string> } => {
+    profilesDir: string,
+): CredentialsTarget => {
     switch (credentials.type) {
         case WarehouseTypes.BIGQUERY:
             return {
@@ -18,7 +30,7 @@ const credentialsTarget = (
                     method: 'service-account-json',
                     project: credentials.project,
                     dataset: credentials.dataset,
-                    threads: credentials.threads,
+                    threads: DEFAULT_THREADS,
                     timeout_seconds: credentials.timeoutSeconds,
                     priority: credentials.priority,
                     retries: credentials.retries,
@@ -29,6 +41,7 @@ const credentialsTarget = (
                             envVarReference(key),
                         ]),
                     ),
+                    execution_project: credentials.executionProject,
                 },
                 environment: Object.fromEntries(
                     Object.entries(credentials.keyfileContents).map(
@@ -46,12 +59,11 @@ const credentialsTarget = (
                     port: credentials.port,
                     dbname: credentials.dbname,
                     schema: credentials.schema,
-                    threads: credentials.threads,
+                    threads: DEFAULT_THREADS,
                     keepalives_idle: credentials.keepalivesIdle,
                     sslmode: credentials.sslmode,
-                    sslrootcert: path.resolve(
-                        __dirname,
-                        '../services/warehouseClients/amazon-trust-ca-bundle.crt',
+                    sslrootcert: require.resolve(
+                        '@lightdash/warehouses/dist/warehouseClients/ca-bundle-aws-redshift.crt',
                     ),
                     ra3_node: credentials.ra3Node || true,
                 },
@@ -70,19 +82,44 @@ const credentialsTarget = (
                     port: credentials.port,
                     dbname: credentials.dbname,
                     schema: credentials.schema,
-                    threads: credentials.threads,
+                    threads: DEFAULT_THREADS,
                     keepalives_idle: credentials.keepalivesIdle,
                     search_path: credentials.searchPath,
                     role: credentials.role,
                     sslmode: credentials.sslmode,
+                    ...(credentials.host.endsWith('.rds.amazonaws.com')
+                        ? {
+                              sslrootcert: require.resolve(
+                                  '@lightdash/warehouses/dist/warehouseClients/ca-bundle-aws-rds-global.pem',
+                              ),
+                          }
+                        : {}),
                 },
                 environment: {
                     [envVar('user')]: credentials.user,
                     [envVar('password')]: credentials.password,
                 },
             };
-        case WarehouseTypes.SNOWFLAKE:
+        case WarehouseTypes.TRINO:
             return {
+                target: {
+                    type: credentials.type,
+                    host: credentials.host,
+                    method: 'ldap',
+                    user: envVarReference('user'),
+                    password: envVarReference('password'),
+                    port: credentials.port,
+                    database: credentials.dbname,
+                    schema: credentials.schema,
+                    http_scheme: credentials.http_scheme,
+                },
+                environment: {
+                    [envVar('user')]: credentials.user,
+                    [envVar('password')]: credentials.password,
+                },
+            };
+        case WarehouseTypes.SNOWFLAKE: {
+            const result: CredentialsTarget = {
                 target: {
                     type: credentials.type,
                     account: credentials.account,
@@ -92,50 +129,72 @@ const credentialsTarget = (
                     database: credentials.database,
                     warehouse: credentials.warehouse,
                     schema: credentials.schema,
-                    threads: credentials.threads,
+                    threads: DEFAULT_THREADS,
                     client_session_keep_alive:
                         credentials.clientSessionKeepAlive,
                     query_tag: credentials.queryTag,
                 },
                 environment: {
                     [envVar('user')]: credentials.user,
-                    [envVar('password')]: credentials.password,
                 },
             };
+            if (credentials.password) {
+                result.target.password = envVarReference('password');
+                result.environment[envVar('password')] = credentials.password;
+            } else if (credentials.privateKey) {
+                const privateKeyPath = path.join(profilesDir, 'rsa_key.p8');
+                result.target.private_key_path =
+                    envVarReference('privateKeyPath');
+                result.environment[envVar('privateKeyPath')] = privateKeyPath;
+                result.files = { [privateKeyPath]: credentials.privateKey };
+                if (credentials.privateKeyPass) {
+                    result.target.private_key_passphrase =
+                        envVarReference('privateKeyPass');
+                    result.environment[envVar('privateKeyPass')] =
+                        credentials.privateKeyPass;
+                }
+            } else {
+                throw new Error(
+                    `Incorrect snowflake profile. Profile should have password or private key.`,
+                );
+            }
+            return result;
+        }
         case WarehouseTypes.DATABRICKS:
             return {
                 target: {
                     type: WarehouseTypes.DATABRICKS,
+                    catalog: credentials.catalog,
+                    // this supposed to be a `schema` but changing it will break for existing customers
                     schema: credentials.database,
                     host: credentials.serverHostName,
                     token: envVarReference('token'),
                     http_path: credentials.httpPath,
-                    port: credentials.port,
                 },
                 environment: {
                     [envVar('token')]: credentials.personalAccessToken,
                 },
             };
-        default: {
+        default:
             const { type } = credentials;
-            const nope: never = credentials;
-            throw new Error(
+            return assertUnreachable(
+                credentials,
                 `No profile implemented for warehouse type: ${type}`,
             );
-        }
     }
 };
 export const profileFromCredentials = (
     credentials: CreateWarehouseCredentials,
+    profilesDir: string,
     customTargetName: string | undefined = undefined,
 ) => {
     const targetName = customTargetName || LIGHTDASH_TARGET_NAME;
-    const { target, environment } = credentialsTarget(credentials);
+    const { target, environment, files } = credentialsTarget(
+        credentials,
+        profilesDir,
+    );
+
     const profile = yaml.dump({
-        config: {
-            partial_parse: false,
-            send_anonymous_usage_stats: false,
-        },
         [LIGHTDASH_PROFILE_NAME]: {
             target: targetName,
             outputs: {
@@ -143,8 +202,10 @@ export const profileFromCredentials = (
             },
         },
     });
+
     return {
         profile,
         environment,
+        files,
     };
 };

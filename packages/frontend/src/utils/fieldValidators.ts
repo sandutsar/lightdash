@@ -1,4 +1,4 @@
-import { validateEmail } from 'common';
+import { isValidFrequency, validateGithubToken } from '@lightdash/common';
 
 type FieldValidator<T> = (
     fieldName: string,
@@ -25,17 +25,39 @@ export const startWithSlash: FieldValidator<string> = (fieldName) => (value) =>
         ? undefined
         : `${fieldName} should start with a "/"`;
 
-export const isValidEmail: FieldValidator<string> = (fieldName) => (value) =>
-    !value || validateEmail(value) ? undefined : `${fieldName} is not valid`;
+export const startWithHTTPSProtocol: FieldValidator<string> =
+    (fieldName) => (value) =>
+        !value || value.match(/^https:\/\/.*/)
+            ? undefined
+            : `${fieldName} should start with a "https://"`;
 
-export const isValidEmailDomain: FieldValidator<string[]> =
+export const isValidGithubToken: FieldValidator<string> =
+    (_fieldName) => (value) => {
+        if (value) {
+            const [_isValid, error] = validateGithubToken(value);
+            return error;
+        }
+    };
+
+// Supports values: "1" "1,2,3" "1-3" "*/5" "*"
+const cronValueRegex = new RegExp(
+    /^(\*\/\d)|((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*)$/,
+);
+export const isInvalidCronExpression: FieldValidator<string> =
     (fieldName) => (value) => {
         if (value) {
-            const hasInvalidValue = value.some((item: string) =>
-                item.match(/@/),
-            );
-            return hasInvalidValue
-                ? `${fieldName} should not contain @, eg: (gmail.com)`
-                : undefined;
+            const cronValues = value.split(' ');
+            if (cronValues.length !== 5) {
+                return `${fieldName} should only have 5 values separated by a space.`;
+            }
+            if (
+                cronValues.some((item: string) => !item.match(cronValueRegex))
+            ) {
+                return `${fieldName} has invalid values. Example of valid values: "1", "1,2,3", "1-3", "*/5" and "*".`;
+            }
+            if (!isValidFrequency(value)) {
+                return `${fieldName} has invalid frequency, custom cron input is limited to hourly`;
+            }
+            return undefined;
         }
     };

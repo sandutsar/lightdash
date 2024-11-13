@@ -8,13 +8,15 @@
 # testing
 /coverage
 /packages/**/coverage
-/cypress/screenshots/**/*
-/cypress/videos/**/*
+/packages/e2e/cypress/screenshots/**/*
+/packages/e2e/cypress/videos/**/*
+/packages/e2e/cypress/downloads/**/*
 
 # logs
 /packages/backend/logs
 /packages/backend/src/database/logs
 /packages/cli/logs
+/packages/warehouses/logs
 
 # development
 lightdash_dev.yml
@@ -24,6 +26,7 @@ lightdash_dev.yml
 /packages/common/dist
 /packages/backend/dist
 /packages/cli/dist
+/packages/warehouses/dist
 
 # misc
 .DS_Store
@@ -38,14 +41,30 @@ yarn-error.log*
 
 .idea
 node_modules
+package-lock.json
 
 # typescript
 *.tsbuildinfo
 
 # examples
+/examples/full-jaffle-shop-demo/dbt/target
 /dbt
 /profile*
 
 # docs
 /docs/build
 /docs/.docusaurus
+
+# credentials
+credentials.json
+
+# dbt
+/target
+packages/backend/target/
+venv/
+dbt_modules/
+logs/
+/.envrc
+
+# dangerfile
+dangerfile.development.ts

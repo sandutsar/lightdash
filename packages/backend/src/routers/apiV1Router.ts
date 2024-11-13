@@ -2,22 +2,22 @@ import express from 'express';
 import passport from 'passport';
 import { lightdashConfig } from '../config/lightdashConfig';
 import {
-    getGoogleLogin,
-    getGoogleLoginFailure,
-    getGoogleLoginSuccess,
-    unauthorisedInDemo,
+    getLoginHint,
+    getOidcRedirectURL,
+    initiateOktaOpenIdLogin,
+    storeOIDCRedirect,
 } from '../controllers/authentication';
-import { userModel } from '../models/models';
 import { UserModel } from '../models/UserModel';
-import { healthService, userService } from '../services/services';
-import { sanitizeEmailParam, sanitizeStringParam } from '../utils';
+import { analyticsRouter } from './analyticsRouter';
 import { dashboardRouter } from './dashboardRouter';
+import { headlessBrowserRouter } from './headlessBrowser';
 import { inviteLinksRouter } from './inviteLinksRouter';
 import { jobsRouter } from './jobsRouter';
 import { organizationRouter } from './organizationRouter';
 import { passwordResetLinksRouter } from './passwordResetLinksRouter';
 import { projectRouter } from './projectRouter';
 import { savedChartRouter } from './savedChartRouter';
+import { slackRouter } from './slackRouter';
 import { userRouter } from './userRouter';
 
 export const apiV1Router = express.Router();
@@ -29,8 +29,9 @@ apiV1Router.get('/livez', async (req, res, next) => {
 });
 
 apiV1Router.get('/health', async (req, res, next) => {
-    healthService
-        .getHealthState(!!req.user?.userUuid)
+    req.services
+        .getHealthService()
+        .getHealthState(req.user)
         .then((state) =>
             res.json({
                 status: 'ok',
@@ -47,31 +48,6 @@ apiV1Router.get('/flash', (req, res) => {
     });
 });
 
-apiV1Router.post('/register', unauthorisedInDemo, async (req, res, next) => {
-    try {
-        const lightdashUser = await userService.registerInitialUser({
-            firstName: sanitizeStringParam(req.body.firstName),
-            lastName: sanitizeStringParam(req.body.lastName),
-            email: sanitizeEmailParam(req.body.email),
-            password: sanitizeStringParam(req.body.password),
-        });
-        const sessionUser = await userModel.findSessionUserByUUID(
-            lightdashUser.userUuid,
-        );
-        req.login(sessionUser, (err) => {
-            if (err) {
-                next(err);
-            }
-            res.json({
-                status: 'ok',
-                results: lightdashUser,
-            });
-        });
-    } catch (e) {
-        next(e);
-    }
-});
-
 apiV1Router.post('/login', passport.authenticate('local'), (req, res, next) => {
     req.session.save((err) => {
         if (err) {
@@ -86,34 +62,122 @@ apiV1Router.post('/login', passport.authenticate('local'), (req, res, next) => {
 });
 
 apiV1Router.get(
-    lightdashConfig.auth.google.loginPath,
-    getGoogleLogin,
-    passport.authenticate('google', {
-        scope: ['profile', 'email'],
-    }),
+    lightdashConfig.auth.okta.loginPath,
+    storeOIDCRedirect,
+    initiateOktaOpenIdLogin,
+);
+
+apiV1Router.get(lightdashConfig.auth.okta.callbackPath, (req, res, next) =>
+    passport.authenticate('okta', {
+        failureRedirect: getOidcRedirectURL(false)(req),
+        successRedirect: getOidcRedirectURL(true)(req),
+        failureFlash: true,
+    })(req, res, next),
 );
 
 apiV1Router.get(
-    lightdashConfig.auth.google.callbackPath,
-    passport.authenticate('google', {
-        failureRedirect: '/api/v1/oauth/google/failure',
-        successRedirect: '/api/v1/oauth/google/success',
-        failureFlash: true,
+    lightdashConfig.auth.azuread.loginPath,
+    storeOIDCRedirect,
+    passport.authenticate('azuread', {
+        scope: ['openid', 'profile', 'email'].join(' '),
     }),
 );
-apiV1Router.get('/oauth/google/failure', getGoogleLoginFailure);
-apiV1Router.get('/oauth/google/success', getGoogleLoginSuccess);
+
+apiV1Router.get(lightdashConfig.auth.azuread.callbackPath, (req, res, next) =>
+    passport.authenticate('azuread', {
+        failureRedirect: getOidcRedirectURL(false)(req),
+        successRedirect: getOidcRedirectURL(true)(req),
+        failureFlash: true,
+    })(req, res, next),
+);
+
+apiV1Router.get(
+    lightdashConfig.auth.oidc.loginPath,
+    storeOIDCRedirect,
+    passport.authenticate(
+        'oidc',
+        lightdashConfig.auth.oidc.scopes
+            ? {
+                  scope: lightdashConfig.auth.oidc.scopes,
+              }
+            : {},
+    ),
+);
+
+apiV1Router.get(lightdashConfig.auth.oidc.callbackPath, (req, res, next) =>
+    passport.authenticate('oidc', {
+        failureRedirect: getOidcRedirectURL(false)(req),
+        successRedirect: getOidcRedirectURL(true)(req),
+        failureFlash: true,
+    })(req, res, next),
+);
+
+apiV1Router.get(
+    lightdashConfig.auth.oneLogin.loginPath,
+    storeOIDCRedirect,
+    passport.authenticate('oneLogin', {
+        scope: ['openid', 'profile', 'email'],
+    }),
+);
+
+apiV1Router.get(lightdashConfig.auth.oneLogin.callbackPath, (req, res, next) =>
+    passport.authenticate('oneLogin', {
+        failureRedirect: getOidcRedirectURL(false)(req),
+        successRedirect: getOidcRedirectURL(true)(req),
+        failureFlash: true,
+    })(req, res, next),
+);
+
+apiV1Router.get(
+    lightdashConfig.auth.google.loginPath,
+    storeOIDCRedirect,
+    (req, res, next) => {
+        passport.authenticate('google', {
+            scope: ['profile', 'email'],
+            loginHint: getLoginHint(req),
+        })(req, res, next);
+    },
+);
+apiV1Router.get(
+    '/login/gdrive',
+    storeOIDCRedirect,
+    passport.authenticate('google', {
+        scope: [
+            'profile',
+            'email',
+            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/spreadsheets',
+        ],
+        accessType: 'offline',
+        prompt: 'consent',
+        session: false,
+        includeGrantedScopes: true,
+    }),
+);
+
+apiV1Router.get(lightdashConfig.auth.google.callbackPath, (req, res, next) => {
+    passport.authenticate('google', {
+        failureRedirect: getOidcRedirectURL(false)(req),
+        successRedirect: getOidcRedirectURL(true)(req),
+        failureFlash: true,
+        includeGrantedScopes: true,
+    })(req, res, next);
+});
 
 apiV1Router.get('/logout', (req, res, next) => {
-    req.logout();
-    req.session.save((err) => {
+    req.logout((err) => {
         if (err) {
-            next(err);
-        } else {
-            res.json({
-                status: 'ok',
-            });
+            return next(err);
         }
+        return req.session.destroy((err2) => {
+            if (err2) {
+                next(err2);
+            } else {
+                res.json({
+                    status: 'ok',
+                });
+            }
+        });
     });
 });
 
@@ -122,6 +186,9 @@ apiV1Router.use('/invite-links', inviteLinksRouter);
 apiV1Router.use('/org', organizationRouter);
 apiV1Router.use('/user', userRouter);
 apiV1Router.use('/projects/:projectUuid', projectRouter);
-apiV1Router.use('/dashboards/:dashboardUuid', dashboardRouter);
+apiV1Router.use('/dashboards', dashboardRouter);
 apiV1Router.use('/password-reset', passwordResetLinksRouter);
 apiV1Router.use('/jobs', jobsRouter);
+apiV1Router.use('/slack', slackRouter);
+apiV1Router.use('/headless-browser', headlessBrowserRouter);
+apiV1Router.use('/analytics', analyticsRouter);

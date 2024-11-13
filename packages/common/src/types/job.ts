@@ -44,6 +44,7 @@ export const JobLabels = {
 export type BaseJob = {
     jobUuid: string;
     projectUuid: string | undefined;
+    userUuid: string | undefined;
     createdAt: Date;
     updatedAt: Date;
     jobStatus: JobStatusType;
@@ -66,7 +67,7 @@ export type Job = CompileJob | CreateProjectJob;
 
 export type CreateJob = Pick<
     Job,
-    'jobUuid' | 'projectUuid' | 'jobType' | 'jobStatus'
+    'jobUuid' | 'projectUuid' | 'jobType' | 'jobStatus' | 'userUuid'
 > & {
     steps: CreateJobStep[];
 };
@@ -78,8 +79,42 @@ export type JobStep = {
     stepStatus: JobStepStatusType;
     stepType: JobStepType;
     stepError: string | undefined;
+    stepDbtLogs: DbtLog[] | undefined;
     stepLabel: string;
     startedAt: Date | undefined;
 };
 
 type CreateJobStep = Pick<JobStep, 'stepType'>;
+
+// https://docs.getdbt.com/reference/events-logging#structured-logging
+export type DbtLog = {
+    code: string;
+    info: {
+        category: string;
+        code: string;
+        extra: Record<string, unknown>;
+        invocation_id: string;
+        level: 'debug' | 'info' | 'warn' | 'error';
+        log_version: 2;
+        msg: string;
+        name: string;
+        pid: number;
+        thread_name: string;
+        ts: string;
+        type: 'log_line';
+    };
+};
+
+export function isDbtLog(value: unknown): value is DbtLog {
+    return (
+        typeof value === 'object' &&
+        value != null &&
+        'info' in value &&
+        typeof (value as DbtLog).info === 'object' &&
+        typeof (value as DbtLog).info != null &&
+        'level' in (value as DbtLog).info &&
+        typeof (value as DbtLog).info.level === 'string' &&
+        'msg' in (value as DbtLog).info &&
+        typeof (value as DbtLog).info.msg === 'string'
+    );
+}

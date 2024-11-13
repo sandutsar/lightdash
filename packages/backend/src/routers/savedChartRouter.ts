@@ -1,18 +1,38 @@
 import express from 'express';
 import {
+    allowApiKeyAuthentication,
     isAuthenticated,
     unauthorisedInDemo,
 } from '../controllers/authentication';
-import { projectService, savedChartsService } from '../services/services';
 
 export const savedChartRouter = express.Router();
 
 savedChartRouter.get(
     '/:savedQueryUuid',
+    allowApiKeyAuthentication,
     isAuthenticated,
     async (req, res, next) => {
-        savedChartsService
-            .get(req.params.savedQueryUuid)
+        req.services
+            .getSavedChartService()
+            .get(req.params.savedQueryUuid, req.user!)
+            .then((results) => {
+                res.json({
+                    status: 'ok',
+                    results,
+                });
+            })
+            .catch(next);
+    },
+);
+
+savedChartRouter.get(
+    '/:savedQueryUuid/views',
+    allowApiKeyAuthentication,
+    isAuthenticated,
+    async (req, res, next) => {
+        req.services
+            .getSavedChartService()
+            .getViewStats(req.user!, req.params.savedQueryUuid)
             .then((results) => {
                 res.json({
                     status: 'ok',
@@ -25,9 +45,11 @@ savedChartRouter.get(
 
 savedChartRouter.get(
     '/:savedQueryUuid/availableFilters',
+    allowApiKeyAuthentication,
     isAuthenticated,
     async (req, res, next) =>
-        projectService
+        req.services
+            .getProjectService()
             .getAvailableFiltersForSavedQuery(
                 req.user!,
                 req.params.savedQueryUuid,
@@ -43,10 +65,12 @@ savedChartRouter.get(
 
 savedChartRouter.delete(
     '/:savedQueryUuid',
+    allowApiKeyAuthentication,
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        savedChartsService
+        req.services
+            .getSavedChartService()
             .delete(req.user!, req.params.savedQueryUuid)
             .then(() => {
                 res.json({
@@ -60,11 +84,32 @@ savedChartRouter.delete(
 
 savedChartRouter.patch(
     '/:savedQueryUuid',
+    allowApiKeyAuthentication,
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        savedChartsService
+        req.services
+            .getSavedChartService()
             .update(req.user!, req.params.savedQueryUuid, req.body)
+            .then((results) => {
+                res.json({
+                    status: 'ok',
+                    results,
+                });
+            })
+            .catch(next);
+    },
+);
+
+savedChartRouter.patch(
+    '/:savedQueryUuid/pinning',
+    allowApiKeyAuthentication,
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        req.services
+            .getSavedChartService()
+            .togglePinning(req.user!, req.params.savedQueryUuid)
             .then((results) => {
                 res.json({
                     status: 'ok',
@@ -77,10 +122,12 @@ savedChartRouter.patch(
 
 savedChartRouter.post(
     '/:savedQueryUuid/version',
+    allowApiKeyAuthentication,
     isAuthenticated,
     unauthorisedInDemo,
     async (req, res, next) => {
-        savedChartsService
+        req.services
+            .getSavedChartService()
             .createVersion(req.user!, req.params.savedQueryUuid, req.body)
             .then((results) => {
                 res.json({
@@ -89,5 +136,46 @@ savedChartRouter.post(
                 });
             })
             .catch(next);
+    },
+);
+
+savedChartRouter.get(
+    '/:savedQueryUuid/schedulers',
+    allowApiKeyAuthentication,
+    isAuthenticated,
+    async (req, res, next) => {
+        try {
+            res.json({
+                status: 'ok',
+                results: await req.services
+                    .getSavedChartService()
+                    .getSchedulers(req.user!, req.params.savedQueryUuid),
+            });
+        } catch (e) {
+            next(e);
+        }
+    },
+);
+
+savedChartRouter.post(
+    '/:savedQueryUuid/schedulers',
+    allowApiKeyAuthentication,
+    isAuthenticated,
+    unauthorisedInDemo,
+    async (req, res, next) => {
+        try {
+            res.json({
+                status: 'ok',
+                results: await req.services
+                    .getSavedChartService()
+                    .createScheduler(
+                        req.user!,
+                        req.params.savedQueryUuid,
+                        req.body,
+                    ),
+            });
+        } catch (e) {
+            next(e);
+        }
     },
 );

@@ -5,27 +5,15 @@ import {
     CompiledTableCalculation,
     CompileError,
     convertAdditionalMetric,
+    convertFieldRefToFieldId,
     Explore,
-    FieldId,
+    ExploreCompiler,
+    getFieldQuoteChar,
+    lightdashVariablePattern,
     MetricQuery,
     TableCalculation,
-} from 'common';
-import { compileMetricSql, lightdashVariablePattern } from './exploreCompiler';
-import { getQuoteChar } from './queryBuilder';
-
-const resolveQueryFieldReference = (ref: string): FieldId => {
-    const parts = ref.split('.');
-    if (parts.length !== 2) {
-        throw new CompileError(
-            `Table calculation contains an invalid reference: ${ref}. References must be of the format "table.field"`,
-            {},
-        );
-    }
-    const [tableName, fieldName] = parts;
-    const fieldId = `${tableName}_${fieldName}`;
-
-    return fieldId;
-};
+    WarehouseClient,
+} from '@lightdash/common';
 
 const compileTableCalculation = (
     tableCalculation: TableCalculation,
@@ -41,7 +29,7 @@ const compileTableCalculation = (
     const compiledSql = tableCalculation.sql.replace(
         lightdashVariablePattern,
         (_, p1) => {
-            const fieldId = resolveQueryFieldReference(p1);
+            const fieldId = convertFieldRefToFieldId(p1);
             if (validFieldIds.includes(fieldId)) {
                 return `${quoteChar}${fieldId}${quoteChar}`;
             }
@@ -59,11 +47,14 @@ const compileTableCalculation = (
 
 type CompileAdditionalMetricArgs = {
     additionalMetric: AdditionalMetric;
-    explore: Pick<Explore, 'tables'>;
+    explore: Pick<Explore, 'tables' | 'targetDatabase'>;
+
+    warehouseClient: WarehouseClient;
 };
 const compileAdditionalMetric = ({
     additionalMetric,
     explore,
+    warehouseClient,
 }: CompileAdditionalMetricArgs): CompiledMetric => {
     const table = explore.tables[additionalMetric.table];
     if (table === undefined) {
@@ -72,34 +63,59 @@ const compileAdditionalMetric = ({
             {},
         );
     }
+    const exploreCompiler = new ExploreCompiler(warehouseClient);
+
     const metric = convertAdditionalMetric({ additionalMetric, table });
-    return { ...metric, compiledSql: compileMetricSql(metric, explore.tables) };
+    const compiledMetric = exploreCompiler.compileMetricSql(
+        metric,
+        explore.tables,
+    );
+    return {
+        ...metric,
+        compiledSql: compiledMetric.sql,
+        tablesReferences: Array.from(compiledMetric.tablesReferences),
+    };
 };
 
 type CompileMetricQueryArgs = {
     explore: Pick<Explore, 'targetDatabase' | 'tables'>;
     metricQuery: MetricQuery;
+
+    warehouseClient: WarehouseClient;
 };
 export const compileMetricQuery = ({
     explore,
     metricQuery,
+    warehouseClient,
 }: CompileMetricQueryArgs): CompiledMetricQuery => {
-    const quoteChar = getQuoteChar(explore.targetDatabase);
+    const fieldQuoteChar = getFieldQuoteChar(warehouseClient.credentials.type);
     const compiledTableCalculations = metricQuery.tableCalculations.map(
         (tableCalculation) =>
             compileTableCalculation(
                 tableCalculation,
                 [...metricQuery.dimensions, ...metricQuery.metrics],
-                quoteChar,
+                fieldQuoteChar,
             ),
     );
     const compiledAdditionalMetrics = (metricQuery.additionalMetrics || []).map(
         (additionalMetric) =>
-            compileAdditionalMetric({ additionalMetric, explore }),
+            compileAdditionalMetric({
+                additionalMetric,
+                explore,
+                warehouseClient,
+            }),
     );
+
+    const compiler = new ExploreCompiler(warehouseClient);
+    const compiledCustomDimensions = (metricQuery.customDimensions || []).map(
+        (customDimension) =>
+            compiler.compileCustomDimension(customDimension, explore.tables),
+    );
+
     return {
         ...metricQuery,
         compiledTableCalculations,
         compiledAdditionalMetrics,
+        compiledCustomDimensions,
     };
 };

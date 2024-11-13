@@ -1,148 +1,157 @@
-import { Button, Card, Colors, H5, Intent } from '@blueprintjs/core';
+import { subject } from '@casl/ability';
 import {
-    CreateWarehouseCredentials,
-    DbtProjectConfig,
+    DbtProjectType,
     friendlyName,
     ProjectType,
-} from 'common';
-import React, { FC, useEffect } from 'react';
-import { FieldErrors, useForm } from 'react-hook-form';
-import { SubmitErrorHandler } from 'react-hook-form/dist/types/form';
+    type CreateWarehouseCredentials,
+    type DbtProjectConfig,
+    type SupportedDbtVersions,
+    type WarehouseTypes,
+} from '@lightdash/common';
+import {
+    Alert,
+    Anchor,
+    Avatar,
+    Button,
+    Card,
+    Flex,
+    Stack,
+    Text,
+    TextInput,
+    Title,
+} from '@mantine/core';
+import { IconExclamationCircle } from '@tabler/icons-react';
+import { useEffect, useMemo, useState, type FC } from 'react';
+import { useForm, useFormContext, type FieldErrors } from 'react-hook-form';
+import { type SubmitErrorHandler } from 'react-hook-form/dist/types/form';
 import { useHistory } from 'react-router-dom';
+import useToaster from '../../hooks/toaster/useToaster';
 import {
     useCreateMutation,
     useProject,
     useUpdateMutation,
 } from '../../hooks/useProject';
+import { useActiveJob } from '../../providers/ActiveJobProvider';
 import { useApp } from '../../providers/AppProvider';
 import { useTracking } from '../../providers/TrackingProvider';
 import { EventName } from '../../types/Events';
+import { useAbilityContext } from '../common/Authorization';
+import MantineIcon from '../common/MantineIcon';
+import { SettingsGridCard } from '../common/Settings/SettingsCard';
 import DocumentationHelpButton from '../DocumentationHelpButton';
-import Form from '../ReactHookForm/Form';
-import Input from '../ReactHookForm/Input';
 import DbtSettingsForm from './DbtSettingsForm';
+import DbtLogo from './ProjectConnectFlow/Assets/dbt.svg';
+import { getWarehouseIcon } from './ProjectConnectFlow/SelectWarehouse';
+import { FormContainer } from './ProjectConnection.styles';
 import { ProjectFormProvider } from './ProjectFormProvider';
 import ProjectStatusCallout from './ProjectStatusCallout';
 import WarehouseSettingsForm from './WarehouseSettingsForm';
 
 type ProjectConnectionForm = {
     name: string;
+
     dbt: DbtProjectConfig;
+
     warehouse?: CreateWarehouseCredentials;
+    dbtVersion: SupportedDbtVersions;
 };
 
 interface Props {
     showGeneralSettings: boolean;
     disabled: boolean;
-    defaultType?: ProjectType;
+    defaultType?: DbtProjectType;
+    selectedWarehouse?: WarehouseTypes;
+    isProjectUpdate?: boolean;
 }
 
 const ProjectForm: FC<Props> = ({
     showGeneralSettings,
     disabled,
     defaultType,
-}) => (
-    <>
-        {showGeneralSettings && (
-            <Card
-                style={{
-                    marginBottom: '20px',
-                    display: 'flex',
-                    flexDirection: 'row',
-                    gap: 20,
-                }}
-                elevation={1}
-            >
-                <div style={{ flex: 1 }}>
-                    <div
-                        style={{
-                            marginBottom: 15,
-                        }}
-                    >
-                        <H5 style={{ display: 'inline', marginRight: 5 }}>
-                            General settings
-                        </H5>
+    selectedWarehouse,
+    isProjectUpdate,
+}) => {
+    const { health } = useApp();
+    const [warehouse, setWarehouse] = useState(selectedWarehouse);
+    const { register } = useFormContext();
+
+    return (
+        <Stack spacing="xl">
+            {showGeneralSettings && (
+                <SettingsGridCard>
+                    <div>
+                        <Title order={5}>General settings</Title>
                     </div>
+
+                    <div>
+                        <TextInput
+                            label="Project name"
+                            required
+                            disabled={disabled}
+                            {...register('name')}
+                        />
+                    </div>
+                </SettingsGridCard>
+            )}
+
+            <SettingsGridCard>
+                <div>
+                    {warehouse && getWarehouseIcon(warehouse)}
+                    <Flex align="center" gap={2}>
+                        <Title order={5}>Warehouse connection</Title>
+                        <DocumentationHelpButton
+                            href="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#warehouse-connection"
+                            pos="relative"
+                            top="2px"
+                        />
+                    </Flex>
+
+                    {health.data?.staticIp && (
+                        <Text color="gray">
+                            If you need to add our IP address to your database's
+                            allow-list, use <b>{health.data?.staticIp}</b>
+                        </Text>
+                    )}
                 </div>
-                <div style={{ flex: 1 }}>
-                    <Input
-                        name="name"
-                        label="Project name"
-                        rules={{
-                            required: 'Required field',
-                        }}
+
+                <div>
+                    <WarehouseSettingsForm
                         disabled={disabled}
+                        setSelectedWarehouse={setWarehouse}
+                        selectedWarehouse={warehouse}
+                        isProjectUpdate={isProjectUpdate}
                     />
                 </div>
-            </Card>
-        )}
-        <Card
-            style={{
-                marginBottom: '20px',
-                display: 'flex',
-                flexDirection: 'row',
-                gap: 20,
-            }}
-            elevation={1}
-        >
-            <div style={{ flex: 1 }}>
-                <div
-                    style={{
-                        marginBottom: 15,
-                    }}
-                >
-                    <H5
-                        style={{
-                            display: 'inline',
-                            marginRight: 5,
-                        }}
-                    >
-                        dbt connection
-                    </H5>
-                    <DocumentationHelpButton url="https://docs.lightdash.com/get-started/setup-lightdash/connect-project" />
+            </SettingsGridCard>
+
+            <SettingsGridCard>
+                <div>
+                    <Avatar size="md" src={DbtLogo} alt="dbt icon" />
+
+                    <Flex align="center" gap={2}>
+                        <Title order={5}>dbt connection</Title>
+                        <DocumentationHelpButton
+                            href="https://docs.lightdash.com/get-started/setup-lightdash/connect-project"
+                            pos="relative"
+                            top="2px"
+                        />
+                    </Flex>
                 </div>
 
-                <p style={{ color: Colors.GRAY1 }}>
-                    Your dbt project must be compatible with{' '}
-                    <a
-                        href="https://docs.getdbt.com/docs/guides/migration-guide/upgrading-to-1-0-0"
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        dbt version <b>1.0.0</b>
-                    </a>
-                </p>
-            </div>
-            <div style={{ flex: 1 }}>
-                <DbtSettingsForm
-                    disabled={disabled}
-                    defaultType={defaultType}
-                />
-            </div>
-        </Card>
-        <Card
-            style={{
-                marginBottom: '20px',
-                display: 'flex',
-                flexDirection: 'row',
-            }}
-            elevation={1}
-        >
-            <div style={{ flex: 1 }}>
-                <H5 style={{ display: 'inline', marginRight: 5 }}>
-                    Warehouse connection
-                </H5>
-                <DocumentationHelpButton url="https://docs.lightdash.com/get-started/setup-lightdash/connect-project#warehouse-connection" />
-            </div>
-            <div style={{ flex: 1 }}>
-                <WarehouseSettingsForm disabled={disabled} />
-            </div>
-        </Card>
-    </>
-);
+                <div>
+                    <DbtSettingsForm
+                        disabled={disabled}
+                        defaultType={defaultType}
+                        selectedWarehouse={warehouse}
+                    />
+                </div>
+            </SettingsGridCard>
+        </Stack>
+    );
+};
 
 const useOnProjectError = (): SubmitErrorHandler<ProjectConnectionForm> => {
-    const { showToastError } = useApp();
+    const { showToastError } = useToaster();
     return async (errors: FieldErrors<ProjectConnectionForm>) => {
         if (!errors) {
             showToastError({
@@ -166,21 +175,35 @@ const useOnProjectError = (): SubmitErrorHandler<ProjectConnectionForm> => {
     };
 };
 
-export const UpdateProjectConnection: FC<{ projectUuid: string }> = ({
-    projectUuid,
-}) => {
-    const { user } = useApp();
+export const UpdateProjectConnection: FC<{
+    projectUuid: string;
+}> = ({ projectUuid }) => {
+    const { user, health } = useApp();
+    const ability = useAbilityContext();
     const { data } = useProject(projectUuid);
     const onError = useOnProjectError();
     const updateMutation = useUpdateMutation(projectUuid);
     const { isLoading: isSaving, mutateAsync, isIdle } = updateMutation;
+
+    const isDisabled =
+        isSaving ||
+        ability.cannot(
+            'update',
+            subject('Project', {
+                organizationUuid: user.data?.organizationUuid,
+                projectUuid,
+            }),
+        );
 
     const methods = useForm<ProjectConnectionForm>({
         shouldUnregister: true,
         defaultValues: {
             name: data?.name,
             dbt: data?.dbtConnection,
-            warehouse: data?.warehouseConnection,
+            warehouse: {
+                ...data?.warehouseConnection,
+            },
+            dbtVersion: data?.dbtVersion,
         },
     });
     const { reset } = methods;
@@ -190,6 +213,7 @@ export const UpdateProjectConnection: FC<{ projectUuid: string }> = ({
                 name: data.name,
                 dbt: data.dbtConnection,
                 warehouse: data.warehouseConnection,
+                dbtVersion: data.dbtVersion,
             });
         }
     }, [reset, data]);
@@ -199,6 +223,7 @@ export const UpdateProjectConnection: FC<{ projectUuid: string }> = ({
         name,
         dbt: dbtConnection,
         warehouse: warehouseConnection,
+        dbtVersion,
     }: Required<ProjectConnectionForm>) => {
         if (user.data) {
             track({
@@ -208,40 +233,83 @@ export const UpdateProjectConnection: FC<{ projectUuid: string }> = ({
                 name,
                 dbtConnection,
                 warehouseConnection,
+                dbtVersion,
             });
         }
     };
 
+    if (data?.type === ProjectType.PREVIEW) {
+        return (
+            <Alert
+                color="orange"
+                icon={<MantineIcon icon={IconExclamationCircle} size="lg" />}
+                title="Developer previews are temporary Lightdash projects where settings cannot be changed."
+            >
+                Read docs{' '}
+                <Anchor
+                    href="https://docs.lightdash.com/guides/cli/how-to-use-lightdash-preview"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    here
+                </Anchor>{' '}
+                to know more.
+            </Alert>
+        );
+    }
+
     return (
-        <Form
+        <FormContainer
             name="update_project"
             methods={methods}
             onSubmit={onSubmit}
             onError={onError}
         >
             <ProjectFormProvider savedProject={data}>
-                <ProjectForm showGeneralSettings disabled={isSaving} />
-            </ProjectFormProvider>
-            {!isIdle && (
-                <ProjectStatusCallout
-                    style={{ marginBottom: '20px' }}
-                    mutation={updateMutation}
+                <ProjectForm
+                    showGeneralSettings
+                    isProjectUpdate
+                    disabled={isDisabled}
+                    defaultType={health.data?.defaultProject?.type}
                 />
-            )}
-            <Button
-                type="submit"
-                intent={Intent.PRIMARY}
-                text="Test & save connection"
-                loading={isSaving}
-                style={{ float: 'right' }}
-            />
-        </Form>
+            </ProjectFormProvider>
+
+            {!isIdle && <ProjectStatusCallout mutation={updateMutation} />}
+
+            <Card
+                component={Flex}
+                justify="flex-end"
+                pos="sticky"
+                withBorder
+                shadow="sm"
+                sx={(theme) => ({
+                    zIndex: 1,
+                    bottom: `-${theme.spacing.xl}`,
+                })}
+            >
+                <Button type="submit" loading={isSaving} disabled={isDisabled}>
+                    {data?.dbtConnection?.type === DbtProjectType.NONE
+                        ? 'Save and test'
+                        : 'Test & deploy project'}
+                </Button>
+            </Card>
+        </FormContainer>
     );
 };
 
-export const CreateProjectConnection: FC = () => {
+interface CreateProjectConnectionProps {
+    isCreatingFirstProject: boolean;
+    selectedWarehouse?: WarehouseTypes | undefined;
+}
+
+export const CreateProjectConnection: FC<CreateProjectConnectionProps> = ({
+    isCreatingFirstProject,
+    selectedWarehouse,
+}) => {
     const history = useHistory();
-    const { user, health, activeJobIsRunning, activeJob } = useApp();
+    const { user, health } = useApp();
+    const [createProjectJobId, setCreateProjectJobId] = useState<string>();
+    const { activeJobIsRunning, activeJobId, activeJob } = useActiveJob();
     const onError = useOnProjectError();
     const createMutation = useCreateMutation();
     const { isLoading: isSaving, mutateAsync } = createMutation;
@@ -250,6 +318,7 @@ export const CreateProjectConnection: FC = () => {
         defaultValues: {
             name: user.data?.organizationName,
             dbt: health.data?.defaultProject,
+            warehouse: { type: selectedWarehouse },
         },
     });
     const { track } = useTracking();
@@ -258,27 +327,48 @@ export const CreateProjectConnection: FC = () => {
         name,
         dbt: dbtConnection,
         warehouse: warehouseConnection,
+        dbtVersion,
     }: Required<ProjectConnectionForm>) => {
         track({
             name: EventName.CREATE_PROJECT_BUTTON_CLICKED,
         });
-        await mutateAsync({
-            name: name || user.data?.organizationName || 'My project',
-            dbtConnection,
-            warehouseConnection,
-        });
+        if (selectedWarehouse) {
+            const data = await mutateAsync({
+                name: name || user.data?.organizationName || 'My project',
+                type: ProjectType.DEFAULT,
+                dbtConnection,
+                dbtVersion,
+                //@ts-ignore
+                warehouseConnection: {
+                    ...warehouseConnection,
+                    type: selectedWarehouse,
+                },
+            });
+            setCreateProjectJobId(data.jobUuid);
+        }
     };
 
     useEffect(() => {
-        if (activeJob?.jobResults?.projectUuid) {
+        if (
+            createProjectJobId &&
+            createProjectJobId === activeJob?.jobUuid &&
+            activeJob?.jobResults?.projectUuid
+        ) {
             history.push({
                 pathname: `/createProjectSettings/${activeJob?.jobResults?.projectUuid}`,
             });
         }
-    }, [activeJob, history]);
+    }, [activeJob, createProjectJobId, history]);
+
+    const isSavingProject = useMemo<boolean>(
+        () =>
+            isSaving ||
+            (!!activeJobIsRunning && activeJobId === createProjectJobId),
+        [activeJobId, activeJobIsRunning, createProjectJobId, isSaving],
+    );
 
     return (
-        <Form
+        <FormContainer
             name="create_project"
             methods={methods}
             onSubmit={onSubmit}
@@ -286,18 +376,20 @@ export const CreateProjectConnection: FC = () => {
         >
             <ProjectFormProvider>
                 <ProjectForm
-                    showGeneralSettings={!health.data?.needsProject}
-                    disabled={isSaving || !!activeJobIsRunning}
+                    showGeneralSettings={!isCreatingFirstProject}
+                    disabled={isSavingProject}
                     defaultType={health.data?.defaultProject?.type}
+                    selectedWarehouse={selectedWarehouse}
                 />
+
+                <Button
+                    sx={{ alignSelf: 'end' }}
+                    type="submit"
+                    loading={isSavingProject}
+                >
+                    Test & deploy project
+                </Button>
             </ProjectFormProvider>
-            <Button
-                type="submit"
-                intent={Intent.PRIMARY}
-                text="Test and compile project"
-                loading={isSaving || activeJobIsRunning}
-                style={{ float: 'right' }}
-            />
-        </Form>
+        </FormContainer>
     );
 };

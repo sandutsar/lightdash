@@ -1,8 +1,17 @@
-import { Card, NonIdealState, Spinner } from '@blueprintjs/core';
-import React from 'react';
-import { useHistory, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+
+import { ResourceViewItemType } from '@lightdash/common';
+import { useCallback, useEffect, useMemo } from 'react';
+import ErrorState from '../components/common/ErrorState';
+import Page from '../components/common/Page/Page';
+import SuboptimalState from '../components/common/SuboptimalState/SuboptimalState';
 import Explorer from '../components/Explorer';
-import ExplorePanel from '../components/Explorer/ExplorePanel/index';
+import ExplorePanel from '../components/Explorer/ExplorePanel';
+import SavedChartsHeader from '../components/Explorer/SavedChartsHeader';
+import useDashboardStorage from '../hooks/dashboard/useDashboardStorage';
+import { useChartPinningMutation } from '../hooks/pinning/useChartPinningMutation';
+import { usePinnedItems } from '../hooks/pinning/usePinnedItems';
+import { useQueryResults } from '../hooks/useQueryResults';
 import { useSavedQuery } from '../hooks/useSavedQuery';
 import {
     ExplorerProvider,
@@ -10,46 +19,76 @@ import {
 } from '../providers/ExplorerProvider';
 
 const SavedExplorer = () => {
-    const history = useHistory();
-    const pathParams = useParams<{
+    const { savedQueryUuid, mode, projectUuid } = useParams<{
         savedQueryUuid: string;
         projectUuid: string;
+        mode?: string;
     }>();
-    const { data, isLoading, error } = useSavedQuery({
-        id: pathParams.savedQueryUuid,
-    });
-    const onBack = () => {
-        history.goBack();
-    };
 
-    if (isLoading) {
+    const isEditMode = mode === 'edit';
+
+    const { setDashboardChartInfo } = useDashboardStorage();
+
+    const { data, isInitialLoading, error } = useSavedQuery({
+        id: savedQueryUuid,
+    });
+
+    const queryResults = useQueryResults({
+        chartUuid: savedQueryUuid,
+        isViewOnly: !isEditMode,
+    });
+
+    const { mutate: togglePinChart } = useChartPinningMutation();
+    const { data: pinnedItems } = usePinnedItems(
+        projectUuid,
+        data?.pinnedListUuid ?? undefined,
+    );
+
+    const handleChartPinning = useCallback(() => {
+        togglePinChart({ uuid: savedQueryUuid });
+    }, [savedQueryUuid, togglePinChart]);
+
+    const isPinned = useMemo(() => {
+        return Boolean(
+            pinnedItems?.some(
+                (item) =>
+                    item.type === ResourceViewItemType.CHART &&
+                    item.data.uuid === data?.uuid,
+            ),
+        );
+    }, [data?.uuid, pinnedItems]);
+
+    useEffect(() => {
+        // If the saved explore is part of a dashboard, set the dashboard chart info
+        // so we can show the banner + the user can navigate back to the dashboard easily
+        if (data && data.dashboardUuid && data.dashboardName) {
+            setDashboardChartInfo({
+                name: data.dashboardName,
+                dashboardUuid: data.dashboardUuid,
+            });
+        }
+    }, [data, setDashboardChartInfo]);
+
+    if (isInitialLoading) {
         return (
             <div style={{ marginTop: '20px' }}>
-                <NonIdealState title="Loading..." icon={<Spinner />} />
+                <SuboptimalState title="Loading..." loading />
             </div>
         );
     }
     if (error) {
-        return (
-            <div style={{ marginTop: '20px' }}>
-                <NonIdealState
-                    title="Unexpected error"
-                    description={error.error.message}
-                />
-            </div>
-        );
+        return <ErrorState error={error.error} />;
     }
 
     return (
         <ExplorerProvider
+            queryResults={queryResults}
+            isEditMode={isEditMode}
             initialState={
                 data
                     ? {
                           shouldFetchResults: true,
-                          expandedSections: [
-                              ExplorerSection.VISUALIZATION,
-                              ExplorerSection.RESULTS,
-                          ],
+                          expandedSections: [ExplorerSection.VISUALIZATION],
                           unsavedChartVersion: {
                               tableName: data.tableName,
                               chartConfig: data.chartConfig,
@@ -57,58 +96,34 @@ const SavedExplorer = () => {
                               tableConfig: data.tableConfig,
                               pivotConfig: data.pivotConfig,
                           },
+                          modals: {
+                              additionalMetric: {
+                                  isOpen: false,
+                              },
+                              customDimension: {
+                                  isOpen: false,
+                              },
+                          },
                       }
                     : undefined
             }
             savedChart={data}
         >
-            <div
-                style={{
-                    display: 'flex',
-                    flexDirection: 'row',
-                    flexWrap: 'nowrap',
-                    justifyContent: 'stretch',
-                    alignItems: 'flex-start',
-                }}
+            <Page
+                title={data?.name}
+                header={
+                    <SavedChartsHeader
+                        onTogglePin={handleChartPinning}
+                        isPinned={isPinned}
+                    />
+                }
+                sidebar={<ExplorePanel />}
+                isSidebarOpen={isEditMode}
+                withFullHeight
+                withPaddedContent
             >
-                <Card
-                    style={{
-                        height: 'calc(100vh - 50px)',
-                        flexBasis: '400px',
-                        flexGrow: 0,
-                        flexShrink: 0,
-                        marginRight: '10px',
-                        overflow: 'hidden',
-                        position: 'sticky',
-                        top: '50px',
-                    }}
-                    elevation={1}
-                >
-                    <div
-                        style={{
-                            height: '100%',
-                            overflow: 'hidden',
-                            display: 'flex',
-                            flexDirection: 'column',
-                        }}
-                    >
-                        <ExplorePanel onBack={onBack} />
-                    </div>
-                </Card>
-                <div
-                    style={{
-                        padding: '10px 10px',
-                        flexGrow: 1,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'flex-start',
-                        alignItems: 'stretch',
-                        minWidth: 0,
-                    }}
-                >
-                    <Explorer />
-                </div>
-            </div>
+                <Explorer />
+            </Page>
         </ExplorerProvider>
     );
 };

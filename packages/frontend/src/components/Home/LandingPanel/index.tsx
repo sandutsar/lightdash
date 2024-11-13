@@ -1,48 +1,42 @@
-import React, { FC } from 'react';
-import LinkButton from '../../common/LinkButton';
-import LatestDashboards from '../LatestDashboards';
-import LatestSavedCharts from '../LatestSavedCharts';
-import {
-    Intro,
-    LandingHeaderWrapper,
-    LandingPanelWrapper,
-    Title,
-    WelcomeText,
-} from './LandingPanel.styles';
+import { subject } from '@casl/ability';
+import { Group, Stack, Text, Title } from '@mantine/core';
+import { type FC } from 'react';
+
+import { useApp } from '../../../providers/AppProvider';
+import { Can } from '../../common/Authorization';
+import MantineLinkButton from '../../common/MantineLinkButton';
 
 interface Props {
-    hasSavedChart: boolean;
     userName: string | undefined;
     projectUuid: string;
 }
 
-const LandingPanel: FC<Props> = ({ hasSavedChart, userName, projectUuid }) => {
+const LandingPanel: FC<Props> = ({ userName, projectUuid }) => {
+    const { user } = useApp();
     return (
-        <LandingPanelWrapper>
-            <LandingHeaderWrapper>
-                <WelcomeText>
-                    <Title>
-                        {`Welcome${
-                            userName ? ', ' + userName : ' to Lightdash'
-                        }! ⚡`}
-                    </Title>
-                    <Intro>
-                        Run a query to ask a business question or browse your
-                        data below:
-                    </Intro>
-                </WelcomeText>
-                <LinkButton
-                    style={{ height: 40 }}
-                    href={`/projects/${projectUuid}/tables`}
-                    intent="primary"
-                    icon="series-search"
-                >
+        <Group position="apart" my="xl">
+            <Stack justify="flex-start" spacing="xs">
+                <Title order={3}>
+                    {`Welcome${userName ? ', ' + userName : ' to Lightdash'}!`}{' '}
+                    ⚡️
+                </Title>
+                <Text color="gray.7">
+                    Run a query to ask a business question or browse your data
+                    below:
+                </Text>
+            </Stack>
+            <Can
+                I="manage"
+                this={subject('Explore', {
+                    organizationUuid: user.data?.organizationUuid,
+                    projectUuid: projectUuid,
+                })}
+            >
+                <MantineLinkButton href={`/projects/${projectUuid}/tables`}>
                     Run a query
-                </LinkButton>
-            </LandingHeaderWrapper>
-            {hasSavedChart && <LatestDashboards projectUuid={projectUuid} />}
-            <LatestSavedCharts projectUuid={projectUuid} />
-        </LandingPanelWrapper>
+                </MantineLinkButton>
+            </Can>
+        </Group>
     );
 };
 

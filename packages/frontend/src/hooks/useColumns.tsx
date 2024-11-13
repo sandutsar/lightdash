@@ -1,144 +1,252 @@
 import {
-    convertAdditionalMetric,
-    fieldId as getFieldId,
+    formatItemValue,
     friendlyName,
-    getFields,
+    getItemMap,
+    isAdditionalMetric,
+    isCustomDimension,
     isDimension,
-    Metric,
-    SortField,
-} from 'common';
-import React, { FC, useMemo } from 'react';
-import { Column } from 'react-table';
-import { useExplorer } from '../providers/ExplorerProvider';
+    isField,
+    isNumericItem,
+    itemsInMetricQuery,
+    type AdditionalMetric,
+    type CustomDimension,
+    type Field,
+    type ItemsMap,
+    type RawResultRow,
+    type ResultRow,
+    type ResultValue,
+    type TableCalculation,
+} from '@lightdash/common';
+import { Group, Tooltip } from '@mantine/core';
+import { IconExclamationCircle } from '@tabler/icons-react';
+import { type CellContext } from '@tanstack/react-table';
+import { useMemo } from 'react';
+import MantineIcon from '../components/common/MantineIcon';
+import {
+    TableHeaderBoldLabel,
+    TableHeaderLabelContainer,
+    TableHeaderRegularLabel,
+} from '../components/common/Table/Table.styles';
+import {
+    columnHelper,
+    type TableColumn,
+} from '../components/common/Table/types';
+import { formatRowValueFromWarehouse } from '../components/DataViz/formatters/formatRowValueFromWarehouse';
+import { useExplorerContext } from '../providers/ExplorerProvider';
+import { useCalculateTotal } from './useCalculateTotal';
 import { useExplore } from './useExplore';
 
-const getSortByProps = (
-    fieldId: string,
-    sortFields: SortField[],
-    toggleSortField: (fieldId: string) => void,
-) => {
-    const getSortByToggleProps = () => ({
-        style: {
-            cursor: 'pointer',
-        },
-        title: 'Toggle SortBy',
-        onClick: (e: MouseEvent) => toggleSortField(fieldId),
-    });
-
-    const sortedIndex = sortFields.findIndex((sf) => fieldId === sf.fieldId);
-    return {
-        getSortByToggleProps,
-        sortedIndex,
-        isSorted: sortedIndex !== -1,
-        isSortedDesc:
-            sortedIndex === -1 ? undefined : sortFields[sortedIndex].descending,
-        isMultiSort: sortFields.length > 1,
-    };
+export const getItemBgColor = (
+    item: Field | AdditionalMetric | TableCalculation | CustomDimension,
+): string => {
+    if (isCustomDimension(item)) return '#d2dbe9';
+    if (isField(item) || isAdditionalMetric(item)) {
+        return isDimension(item) ? '#d2dbe9' : '#e4dad0';
+    } else {
+        return '#d2dfd7';
+    }
 };
 
-const FormatCell: FC<{ value: any }> = ({ value }) => value || '-';
+export const getFormattedValueCell = (
+    info: CellContext<ResultRow, { value: ResultValue }>,
+) => <span>{info.getValue()?.value.formatted || '-'}</span>;
 
-export const useColumns = (): Column<{ [col: string]: any }>[] => {
-    const {
-        state: {
-            activeFields,
-            unsavedChartVersion: {
-                tableName,
-                metricQuery: {
-                    sorts: sortFields,
-                    tableCalculations,
-                    additionalMetrics,
+export const getRawValueCell = (
+    info: CellContext<ResultRow, { value: ResultValue }>,
+) => {
+    let raw = info.getValue()?.value.raw;
+    if (raw === null) return '∅';
+    if (raw === undefined) return '-';
+    if (raw instanceof Date) return <span>{raw.toISOString()}</span>;
+    return <span>{`${raw}`}</span>;
+};
+
+export const getValueCell = (info: CellContext<RawResultRow, string>) => {
+    const value = info.getValue();
+    const formatted = formatRowValueFromWarehouse(value);
+    return <span>{formatted}</span>;
+};
+
+export const useColumns = (): TableColumn[] => {
+    const activeFields = useExplorerContext(
+        (context) => context.state.activeFields,
+    );
+    const tableName = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.tableName,
+    );
+    const tableCalculations = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.tableCalculations,
+    );
+    const customDimensions = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.customDimensions,
+    );
+    const additionalMetrics = useExplorerContext(
+        (context) =>
+            context.state.unsavedChartVersion.metricQuery.additionalMetrics,
+    );
+    const sorts = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.metricQuery.sorts,
+    );
+    const resultsData = useExplorerContext(
+        (context) => context.queryResults.data,
+    );
+
+    const { data: exploreData } = useExplore(tableName, {
+        refetchOnMount: false,
+    });
+
+    const { activeItemsMap, invalidActiveItems } = useMemo<{
+        activeItemsMap: ItemsMap;
+        invalidActiveItems: string[];
+    }>(() => {
+        if (exploreData) {
+            const allItemsMap = getItemMap(
+                exploreData,
+                additionalMetrics,
+                tableCalculations,
+                customDimensions,
+            );
+
+            return Array.from(activeFields).reduce<{
+                activeItemsMap: ItemsMap;
+                invalidActiveItems: string[];
+            }>(
+                (acc, key) => {
+                    return allItemsMap[key]
+                        ? {
+                              ...acc,
+                              activeItemsMap: {
+                                  ...acc.activeItemsMap,
+                                  [key]: allItemsMap[key],
+                              },
+                          }
+                        : {
+                              ...acc,
+                              invalidActiveItems: [
+                                  ...acc.invalidActiveItems,
+                                  key,
+                              ],
+                          };
                 },
-            },
-        },
-        actions: { toggleSortField },
-    } = useExplorer();
-    const { data } = useExplore(tableName);
-    return useMemo(() => {
-        if (data) {
-            const fieldColumns = [
-                ...getFields(data),
-                ...(additionalMetrics || []).reduce<Metric[]>(
-                    (acc, additionalMetric) => {
-                        const table = data.tables[additionalMetric.table];
-                        if (table) {
-                            const metric = convertAdditionalMetric({
-                                additionalMetric,
-                                table,
-                            });
-                            return [...acc, metric];
-                        }
-                        return acc;
-                    },
-                    [],
-                ),
-            ].reduce<Column<{ [col: string]: any }>[]>((acc, field) => {
-                const fieldId = getFieldId(field);
-                if (activeFields.has(fieldId)) {
-                    return [
-                        ...acc,
-                        {
-                            Header: (
-                                <span>
-                                    {field.tableLabel} <b>{field.label}</b>
-                                </span>
-                            ),
-                            description:
-                                field.description ||
-                                `${field.tableLabel} ${field.label}`,
-                            accessor: fieldId,
-                            type: isDimension(field) ? 'dimension' : 'metric',
-                            dimensionType: isDimension(field)
-                                ? field.type
-                                : undefined,
-                            ...getSortByProps(
-                                fieldId,
-                                sortFields,
-                                toggleSortField,
-                            ),
-                            field,
-                            Cell: FormatCell,
-                        },
-                    ];
-                }
-                return [...acc];
-            }, []);
-            const tableCalculationColumns = tableCalculations.reduce<
-                Column<{ [col: string]: any }>[]
-            >((acc, tableCalculation) => {
-                const fieldId = tableCalculation.name;
-                if (activeFields.has(fieldId)) {
-                    return [
-                        ...acc,
-                        {
-                            Header: (
-                                <b>{friendlyName(tableCalculation.name)}</b>
-                            ),
-                            description: friendlyName(tableCalculation.name),
-                            accessor: fieldId,
-                            type: 'table_calculation',
-                            tableCalculation,
-                            ...getSortByProps(
-                                fieldId,
-                                sortFields,
-                                toggleSortField,
-                            ),
-                            Cell: FormatCell,
-                        },
-                    ];
-                }
-                return [...acc];
-            }, []);
-
-            return [...fieldColumns, ...tableCalculationColumns];
+                { activeItemsMap: {}, invalidActiveItems: [] },
+            );
         }
-        return [];
+        return { activeItemsMap: {}, invalidActiveItems: [] };
     }, [
-        activeFields,
-        data,
-        sortFields,
-        tableCalculations,
         additionalMetrics,
-        toggleSortField,
+        exploreData,
+        tableCalculations,
+        activeFields,
+        customDimensions,
     ]);
+
+    const { data: totals } = useCalculateTotal({
+        metricQuery: resultsData?.metricQuery,
+        explore: exploreData?.baseTable,
+        fieldIds: resultsData
+            ? itemsInMetricQuery(resultsData.metricQuery)
+            : undefined,
+        itemsMap: activeItemsMap,
+    });
+
+    return useMemo(() => {
+        const validColumns = Object.entries(activeItemsMap).reduce<
+            TableColumn[]
+        >((acc, [fieldId, item]) => {
+            const hasJoins = (exploreData?.joinedTables || []).length > 0;
+
+            const sortIndex = sorts.findIndex((sf) => fieldId === sf.fieldId);
+            const isFieldSorted = sortIndex !== -1;
+            const column: TableColumn = columnHelper.accessor(
+                (row) => row[fieldId],
+                {
+                    id: fieldId,
+                    header: () => (
+                        <TableHeaderLabelContainer>
+                            {isField(item) ? (
+                                <>
+                                    {hasJoins && (
+                                        <TableHeaderRegularLabel>
+                                            {item.tableLabel}{' '}
+                                        </TableHeaderRegularLabel>
+                                    )}
+
+                                    <TableHeaderBoldLabel>
+                                        {item.label}
+                                    </TableHeaderBoldLabel>
+                                </>
+                            ) : (
+                                <TableHeaderBoldLabel>
+                                    {('displayName' in item &&
+                                        item.displayName) ||
+                                        friendlyName(item.name)}
+                                </TableHeaderBoldLabel>
+                            )}
+                        </TableHeaderLabelContainer>
+                    ),
+                    cell: getFormattedValueCell,
+                    footer: () =>
+                        totals?.[fieldId]
+                            ? formatItemValue(item, totals[fieldId])
+                            : null,
+                    meta: {
+                        item,
+                        draggable: true,
+                        frozen: false,
+                        bgColor: getItemBgColor(item),
+                        sort: isFieldSorted
+                            ? {
+                                  sortIndex,
+                                  sort: sorts[sortIndex],
+                                  isMultiSort: sorts.length > 1,
+                                  isNumeric: isNumericItem(item),
+                              }
+                            : undefined,
+                    },
+                },
+            );
+            return [...acc, column];
+        }, []);
+
+        const invalidColumns = invalidActiveItems.reduce<TableColumn[]>(
+            (acc, fieldId) => {
+                const column: TableColumn = columnHelper.accessor(
+                    (row) => row[fieldId],
+                    {
+                        id: fieldId,
+                        header: () => (
+                            <Group spacing="two">
+                                <Tooltip
+                                    withinPortal
+                                    label="This field was not found in the dbt project."
+                                    position="top"
+                                >
+                                    <MantineIcon
+                                        display="inline"
+                                        icon={IconExclamationCircle}
+                                        color="yellow"
+                                    />
+                                </Tooltip>
+
+                                <TableHeaderBoldLabel
+                                    style={{ marginLeft: 10 }}
+                                >
+                                    {fieldId}
+                                </TableHeaderBoldLabel>
+                            </Group>
+                        ),
+                        cell: getFormattedValueCell,
+                        meta: {
+                            isInvalidItem: true,
+                        },
+                    },
+                );
+                return [...acc, column];
+            },
+            [],
+        );
+        return [...validColumns, ...invalidColumns];
+    }, [activeItemsMap, invalidActiveItems, sorts, totals, exploreData]);
 };

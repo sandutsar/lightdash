@@ -8,8 +8,17 @@ export const passwordResetLinkMock = {
     isExpired: false,
 };
 
-export const lightdashConfigWithNoSMTP: Pick<LightdashConfig, 'smtp'> = {
+export const lightdashConfigWithNoSMTP: Pick<
+    LightdashConfig,
+    'smtp' | 'siteUrl' | 'query'
+> = {
     smtp: undefined,
+    siteUrl: 'https://test.lightdash.cloud',
+    query: {
+        maxLimit: 100,
+        csvCellsLimit: 100,
+        timezone: undefined,
+    },
 };
 
 const smtpBase: SmtpConfig = {
@@ -28,13 +37,25 @@ const smtpBase: SmtpConfig = {
     allowInvalidCertificate: false,
 };
 
-export const lightdashConfigWithBasicSMTP: Pick<LightdashConfig, 'smtp'> = {
+export const lightdashConfigWithBasicSMTP: Pick<
+    LightdashConfig,
+    'smtp' | 'siteUrl' | 'query'
+> = {
     smtp: {
         ...smtpBase,
     },
+    siteUrl: 'https://test.lightdash.cloud',
+    query: {
+        maxLimit: 100,
+        csvCellsLimit: 100,
+        timezone: undefined,
+    },
 };
 
-export const lightdashConfigWithOauth2SMTP: Pick<LightdashConfig, 'smtp'> = {
+export const lightdashConfigWithOauth2SMTP: Pick<
+    LightdashConfig,
+    'smtp' | 'siteUrl' | 'query'
+> = {
     smtp: {
         ...smtpBase,
         auth: {
@@ -43,15 +64,29 @@ export const lightdashConfigWithOauth2SMTP: Pick<LightdashConfig, 'smtp'> = {
             accessToken: 'accessToken',
         },
     },
+    siteUrl: 'https://test.lightdash.cloud',
+    query: {
+        maxLimit: 100,
+        csvCellsLimit: 100,
+        timezone: undefined,
+    },
 };
 
-export const lightdashConfigWithSecurePortSMTP: Pick<LightdashConfig, 'smtp'> =
-    {
-        smtp: {
-            ...smtpBase,
-            port: 465,
-        },
-    };
+export const lightdashConfigWithSecurePortSMTP: Pick<
+    LightdashConfig,
+    'smtp' | 'siteUrl' | 'query'
+> = {
+    smtp: {
+        ...smtpBase,
+        port: 465,
+    },
+    siteUrl: 'https://test.lightdash.cloud',
+    query: {
+        maxLimit: 100,
+        csvCellsLimit: 100,
+        timezone: undefined,
+    },
+};
 
 export const expectedTransporterArgs = [
     {

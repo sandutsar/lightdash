@@ -1,79 +1,144 @@
 import {
-    DimensionType,
-    formatFieldValue,
-    formatItemValue,
-    formatValue,
-    MetricType,
-    NumberStyle,
-} from 'common';
-import { analytics } from '../../analytics/client';
-import {
-    jobModel,
-    onboardingModel,
-    projectModel,
-    savedChartModel,
-} from '../../models/models';
+    defineUserAbility,
+    NotFoundError,
+    OrganizationMemberRole,
+    ParameterError,
+    SessionUser,
+} from '@lightdash/common';
+import { analyticsMock } from '../../analytics/LightdashAnalytics.mock';
+import { S3Client } from '../../clients/Aws/s3';
+import { S3CacheClient } from '../../clients/Aws/S3CacheClient';
+import EmailClient from '../../clients/EmailClient/EmailClient';
+import { lightdashConfigMock } from '../../config/lightdashConfig.mock';
+import { AnalyticsModel } from '../../models/AnalyticsModel';
+import type { CatalogModel } from '../../models/CatalogModel/CatalogModel';
+import { DashboardModel } from '../../models/DashboardModel/DashboardModel';
+import { DownloadFileModel } from '../../models/DownloadFileModel';
+import { EmailModel } from '../../models/EmailModel';
+import { GroupsModel } from '../../models/GroupsModel';
+import { JobModel } from '../../models/JobModel/JobModel';
+import { OnboardingModel } from '../../models/OnboardingModel/OnboardingModel';
+import { ProjectModel } from '../../models/ProjectModel/ProjectModel';
+import { SavedChartModel } from '../../models/SavedChartModel';
+import { SpaceModel } from '../../models/SpaceModel';
+import { SshKeyPairModel } from '../../models/SshKeyPairModel';
+import type { TagsModel } from '../../models/TagsModel';
+import { UserAttributesModel } from '../../models/UserAttributesModel';
+import { UserWarehouseCredentialsModel } from '../../models/UserWarehouseCredentials/UserWarehouseCredentialsModel';
+import { WarehouseAvailableTablesModel } from '../../models/WarehouseAvailableTablesModel/WarehouseAvailableTablesModel';
+import { METRIC_QUERY, warehouseClientMock } from '../../queryBuilder.mock';
+import { SchedulerClient } from '../../scheduler/SchedulerClient';
 import { ProjectService } from './ProjectService';
 import {
     allExplores,
     defaultProject,
-    dimension,
     expectedAllExploreSummary,
+    expectedAllExploreSummaryWithoutErrors,
+    expectedApiQueryResultsWith1Row,
+    expectedApiQueryResultsWith501Rows,
     expectedCatalog,
     expectedExploreSummaryFilteredByName,
     expectedExploreSummaryFilteredByTags,
-    expectedSqlResults,
-    metric,
-    projectAdapterMock,
+    job,
+    lightdashConfigWithNoSMTP,
+    metricQueryMock,
+    projectSummary,
+    projectWithSensitiveFields,
+    resultsWith1Row,
+    resultsWith501Rows,
     spacesWithSavedCharts,
-    tableCalculation,
     tablesConfiguration,
     tablesConfigurationWithNames,
     tablesConfigurationWithTags,
     user,
+    validExplore,
 } from './ProjectService.mock';
 
-jest.mock('../../analytics/client', () => ({
-    analytics: {
-        track: jest.fn(),
-    },
-}));
+const projectModel = {
+    getWithSensitiveFields: jest.fn(async () => projectWithSensitiveFields),
+    get: jest.fn(async () => projectWithSensitiveFields),
+    getSummary: jest.fn(async () => projectSummary),
+    getTablesConfiguration: jest.fn(async () => tablesConfiguration),
+    updateTablesConfiguration: jest.fn(),
+    getExploresFromCache: jest.fn(async () => allExplores),
+    getExploreFromCache: jest.fn(async () => validExplore),
+    findExploresFromCache: jest.fn(async () => ({
+        [validExplore.name]: validExplore,
+    })),
+    lockProcess: jest.fn((projectUuid, fun) => fun()),
+    getWarehouseCredentialsForProject: jest.fn(
+        async () => warehouseClientMock.credentials,
+    ),
+    getWarehouseClientFromCredentials: jest.fn(() => ({
+        ...warehouseClientMock,
+        runQuery: jest.fn(async () => resultsWith1Row),
+    })),
+};
+const onboardingModel = {
+    getByOrganizationUuid: jest.fn(async () => ({
+        ranQueryAt: new Date(),
+        shownSuccessAt: new Date(),
+    })),
+};
+const savedChartModel = {
+    getAllSpaces: jest.fn(async () => spacesWithSavedCharts),
+};
+const jobModel = {
+    get: jest.fn(async () => job),
+};
+const spaceModel = {
+    getAllSpaces: jest.fn(async () => spacesWithSavedCharts),
+};
 
-jest.mock('../../models/models', () => ({
-    projectModel: {
-        getTablesConfiguration: jest.fn(async () => tablesConfiguration),
-        updateTablesConfiguration: jest.fn(),
-        getExploresFromCache: jest.fn(async () => allExplores),
-        lockProcess: jest.fn((projectUuid, fun) => fun()),
-    },
-    onboardingModel: {},
-    savedChartModel: {
-        getAllSpaces: jest.fn(async () => spacesWithSavedCharts),
-    },
-    jobModel: {},
-}));
+const userAttributesModel = {
+    getAttributeValuesForOrgMember: jest.fn(async () => ({})),
+};
 
 describe('ProjectService', () => {
     const { projectUuid } = defaultProject;
     const service = new ProjectService({
-        projectModel,
-        onboardingModel,
-        savedChartModel,
-        jobModel,
+        lightdashConfig: lightdashConfigMock,
+        analytics: analyticsMock,
+        projectModel: projectModel as unknown as ProjectModel,
+        onboardingModel: onboardingModel as unknown as OnboardingModel,
+        savedChartModel: savedChartModel as unknown as SavedChartModel,
+        jobModel: jobModel as unknown as JobModel,
+        emailClient: new EmailClient({
+            lightdashConfig: lightdashConfigWithNoSMTP,
+        }),
+        spaceModel: spaceModel as unknown as SpaceModel,
+        sshKeyPairModel: {} as SshKeyPairModel,
+        userAttributesModel:
+            userAttributesModel as unknown as UserAttributesModel,
+        s3CacheClient: {} as S3CacheClient,
+        analyticsModel: {} as AnalyticsModel,
+        dashboardModel: {} as DashboardModel,
+        userWarehouseCredentialsModel: {} as UserWarehouseCredentialsModel,
+        warehouseAvailableTablesModel: {} as WarehouseAvailableTablesModel,
+        emailModel: {
+            getPrimaryEmailStatus: (userUuid: string) => ({
+                isVerified: true,
+            }),
+        } as unknown as EmailModel,
+        schedulerClient: {} as SchedulerClient,
+        downloadFileModel: {} as unknown as DownloadFileModel,
+        s3Client: {} as S3Client,
+        groupsModel: {} as GroupsModel,
+        tagsModel: {} as TagsModel,
+        catalogModel: {} as CatalogModel,
     });
     afterEach(() => {
         jest.clearAllMocks();
     });
-    test('should get dashboard by uuid', async () => {
-        service.projectAdapters[projectUuid] = projectAdapterMock;
-
+    test('should run sql query', async () => {
+        jest.spyOn(analyticsMock, 'track');
         const result = await service.runSqlQuery(user, projectUuid, 'fake sql');
 
-        expect(result).toEqual(expectedSqlResults);
-        expect(analytics.track).toHaveBeenCalledTimes(1);
-        expect(analytics.track).toHaveBeenCalledWith(
+        expect(result).toEqual(resultsWith1Row);
+        expect(analyticsMock.track).toHaveBeenCalledTimes(1);
+        expect(analyticsMock.track).toHaveBeenCalledWith(
             expect.objectContaining({
-                event: 'sql.executed',
+                event: 'query.executed',
             }),
         );
     });
@@ -92,13 +157,45 @@ describe('ProjectService', () => {
             projectUuid,
             tablesConfigurationWithNames,
         );
+        jest.spyOn(analyticsMock, 'track');
         expect(projectModel.updateTablesConfiguration).toHaveBeenCalledTimes(1);
-        expect(analytics.track).toHaveBeenCalledTimes(1);
-        expect(analytics.track).toHaveBeenCalledWith(
+        expect(analyticsMock.track).toHaveBeenCalledTimes(1);
+        expect(analyticsMock.track).toHaveBeenCalledWith(
             expect.objectContaining({
                 event: 'project_tables_configuration.updated',
             }),
         );
+    });
+    describe('runExploreQuery', () => {
+        test('should get results with 1 row', async () => {
+            const result = await service.runExploreQuery(
+                user,
+                metricQueryMock,
+                projectUuid,
+                'valid_explore',
+                null,
+            );
+            expect(result).toEqual(expectedApiQueryResultsWith1Row);
+        });
+        test('should get results with 501 rows', async () => {
+            // clear in memory cache so new mock is applied
+            service.warehouseClients = {};
+            (
+                projectModel.getWarehouseClientFromCredentials as jest.Mock
+            ).mockImplementation(() => ({
+                ...warehouseClientMock,
+                runQuery: jest.fn(async () => resultsWith501Rows),
+            }));
+
+            const result = await service.runExploreQuery(
+                user,
+                metricQueryMock,
+                projectUuid,
+                'valid_explore',
+                null,
+            );
+            expect(result).toEqual(expectedApiQueryResultsWith501Rows);
+        });
     });
     describe('getAllExploresSummary', () => {
         test('should get all explores summary without filtering', async () => {
@@ -139,186 +236,94 @@ describe('ProjectService', () => {
             );
             expect(result).toEqual(expectedExploreSummaryFilteredByName);
         });
-    });
-
-    describe('format and round', () => {
-        test('formatValue should return the right format', async () => {
-            expect(formatValue('km', undefined, 5)).toEqual('5 km');
-            expect(formatValue('km', undefined, '5')).toEqual('5 km');
-
-            expect(formatValue('mi', undefined, 5)).toEqual('5 mi');
-            expect(formatValue('usd', undefined, 5)).toEqual('$5');
-            expect(formatValue('gbp', undefined, 5)).toEqual('£5');
-            expect(formatValue('eur', undefined, 5)).toEqual('€5');
-            expect(formatValue('percent', undefined, 5)).toEqual('500%');
-            expect(formatValue('percent', undefined, 0.05)).toEqual('5%');
-            expect(formatValue('percent', undefined, '5')).toEqual('500%');
-            expect(formatValue('percent', undefined, 'foo')).toEqual('foo');
-            expect(formatValue('percent', undefined, false)).toEqual('false');
-            expect(formatValue(undefined, undefined, 1103)).toEqual('1,103');
-
-            expect(formatValue('', undefined, 5)).toEqual('5');
-            expect(formatValue(undefined, undefined, 5)).toEqual('5');
-        });
-        test('formatValue should return the right round', async () => {
-            expect(formatValue(undefined, 2, 5)).toEqual('5.00');
-            expect(formatValue(undefined, 2, 5.001)).toEqual('5.00');
-            expect(formatValue(undefined, 2, 5.555)).toEqual('5.55');
-            expect(formatValue(undefined, 2, 5.5555)).toEqual('5.56');
-            expect(formatValue(undefined, 2, 5.9999999)).toEqual('6.00');
-
-            expect(formatValue(undefined, 0, 5)).toEqual('5');
-            expect(formatValue(undefined, 0, 5.001)).toEqual('5');
-            expect(formatValue(undefined, 0, 5.9999999)).toEqual('6');
-
-            // negative rounding not supported
-            expect(formatValue(undefined, -1, 5)).toEqual('5');
-
-            expect(formatValue(undefined, 2, 'foo')).toEqual('foo');
-            expect(formatValue(undefined, 2, false)).toEqual('false');
-
-            expect(formatValue(undefined, 10, 5)).toEqual('5.0000000000');
-            expect(formatValue(undefined, 10, 5.001)).toEqual('5.0010000000');
-            expect(formatValue(undefined, 10, 5.9999999)).toEqual(
-                '5.9999999000',
+        test('should get all explores summary that do not have errors', async () => {
+            const result = await service.getAllExploresSummary(
+                user,
+                projectUuid,
+                false,
+                false,
             );
-        });
-
-        test('formatValue should return the right format and round', async () => {
-            expect(formatValue('km', 2, 5)).toEqual('5.00 km');
-            expect(formatValue('mi', 4, 5)).toEqual('5.0000 mi');
-            expect(formatValue('usd', 2, 5)).toEqual('$5.00');
-            expect(formatValue('usd', 0, 5.0)).toEqual('$5');
-            expect(formatValue('usd', 2, '5.0000')).toEqual('$5.00');
-            expect(formatValue('gbp', 2, 5)).toEqual('£5.00');
-            expect(formatValue('eur', 2, 5)).toEqual('€5.00');
-            expect(formatValue('percent', 2, 5)).toEqual('500.00%');
-            expect(formatValue('percent', 2, 0.05)).toEqual('5.00%');
-            expect(formatValue('percent', 2, '5')).toEqual('500.00%');
-            expect(formatValue('percent', 2, 0.0511)).toEqual('5.11%');
-            expect(formatValue('percent', 4, 0.0511)).toEqual('5.1100%');
-            expect(formatValue('percent', 2, 'foo')).toEqual('foo');
-            expect(formatValue('percent', 2, false)).toEqual('false');
-            expect(formatValue('', 2, 5)).toEqual('5.00');
-        });
-
-        test('formatValue should return the right style', async () => {
-            const T = NumberStyle.THOUSANDS;
-            const M = NumberStyle.MILLIONS;
-            const B = NumberStyle.BILLIONS;
-            expect(formatValue(undefined, undefined, 5, T)).toEqual('0.005K');
-            expect(formatValue(undefined, undefined, 5, M)).toEqual(
-                '0.000005M',
-            );
-            expect(formatValue(undefined, undefined, 500000, B)).toEqual(
-                '0.0005B',
-            );
-            expect(formatValue(undefined, undefined, 5, B)).toEqual('5e-9B');
-            expect(formatValue(undefined, 2, 5, M)).toEqual('0.00M');
-
-            expect(formatValue('km', 2, 5000, T)).toEqual('5.00K km');
-            expect(formatValue('mi', 4, 50000, T)).toEqual('50.0000K mi');
-            expect(formatValue('usd', 2, 5000, T)).toEqual('$5.00K');
-            expect(formatValue('usd', 2, 5000000, T)).toEqual('$5,000.00K');
-            expect(formatValue('usd', 2, 5000000, M)).toEqual('$5.00M');
-
-            expect(formatValue('usd', 2, 4, T)).toEqual('$0.00K');
-            expect(formatValue('usd', 3, 4, T)).toEqual('$0.004K');
-
-            expect(formatValue('usd', 2, 5000000, M)).toEqual('$5.00M');
-            expect(formatValue('usd', 2, 5000000000, M)).toEqual('$5,000.00M');
-            expect(formatValue('usd', 2, 5000000000, B)).toEqual('$5.00B');
-
-            expect(formatValue('usd', 0, 5000.0, T)).toEqual('$5K');
-            expect(formatValue('usd', 2, '5000', T)).toEqual('$5.00K');
-            expect(formatValue('gbp', 2, 5000, T)).toEqual('£5.00K');
-            expect(formatValue('eur', 2, 5000, T)).toEqual('€5.00K');
-            expect(formatValue('percent', 2, 0.05, T)).toEqual('5.00%'); // No affects percent
-            expect(formatValue('', 2, 5000, T)).toEqual('5.00K');
+            expect(result).toEqual(expectedAllExploreSummaryWithoutErrors);
         });
     });
-    describe('format field value', () => {
-        test('formatFieldValue should return the right format when field is undefined', async () => {
-            expect(formatFieldValue(undefined, undefined)).toEqual('-');
-            expect(formatFieldValue(undefined, null)).toEqual('∅');
-            expect(formatFieldValue(undefined, '5')).toEqual('5');
-            expect(formatFieldValue(undefined, 5)).toEqual('5');
+    describe('getJobStatus', () => {
+        test('should get job with projectUuid if user belongs to org ', async () => {
+            const result = await service.getJobStatus('jobUuid', user);
+            expect(result).toEqual(job);
+        });
+        test('should get job without projectUuid if user created the job ', async () => {
+            const jobWithoutProjectUuid = { ...job, projectUuid: undefined };
+            (jobModel.get as jest.Mock).mockImplementationOnce(
+                async () => jobWithoutProjectUuid,
+            );
+
+            const result = await service.getJobStatus('jobUuid', user);
+            expect(result).toEqual(jobWithoutProjectUuid);
         });
 
-        test('formatFieldValue should return the right format when field is Dimension', async () => {
-            expect(formatFieldValue(dimension, undefined)).toEqual('-');
-            expect(formatFieldValue(dimension, null)).toEqual('∅');
-            expect(
-                formatFieldValue(
-                    { ...dimension, type: DimensionType.STRING },
-                    '5',
-                ),
-            ).toEqual('5');
-            expect(
-                formatFieldValue(
-                    { ...dimension, type: DimensionType.NUMBER },
-                    5,
-                ),
-            ).toEqual('5');
-            expect(
-                formatFieldValue(
-                    { ...dimension, type: DimensionType.BOOLEAN },
-                    true,
-                ),
-            ).toEqual('Yes');
-            expect(
-                formatFieldValue(
+        test('should not get job without projectUuid if user is different', async () => {
+            const jobWithoutProjectUuid = { ...job, projectUuid: undefined };
+            (jobModel.get as jest.Mock).mockImplementationOnce(
+                async () => jobWithoutProjectUuid,
+            );
+            const anotherUser: SessionUser = {
+                ...user,
+                userUuid: 'another-user-uuid',
+                role: OrganizationMemberRole.VIEWER,
+
+                ability: defineUserAbility(
                     {
-                        ...dimension,
-                        type: DimensionType.DATE,
+                        ...user,
+                        role: OrganizationMemberRole.VIEWER,
+                        userUuid: 'another-user-uuid',
                     },
-                    new Date('2021-03-10T00:00:00.000Z'),
+                    [],
                 ),
-            ).toEqual('2021-03-10');
-            expect(
-                formatFieldValue(
-                    {
-                        ...dimension,
-                        type: DimensionType.TIMESTAMP,
-                    },
-                    new Date('2021-03-10T00:00:00.000Z'),
-                ),
-            ).toEqual('2021-03-10, 00:00:00:000 (+00:00)');
+            };
+            await expect(
+                service.getJobStatus('jobUuid', anotherUser),
+            ).rejects.toThrowError(NotFoundError);
         });
 
-        test('formatFieldValue should return the right format when field is Metric', async () => {
-            expect(formatFieldValue(metric, undefined)).toEqual('-');
-            expect(formatFieldValue(metric, null)).toEqual('∅');
+        test('should limit CSV results', async () => {
             expect(
-                formatFieldValue({ ...metric, type: MetricType.AVERAGE }, 5),
-            ).toEqual('5');
-            expect(
-                formatFieldValue({ ...metric, type: MetricType.COUNT }, 5),
-            ).toEqual('5');
-            expect(
-                formatFieldValue(
-                    { ...metric, type: MetricType.COUNT_DISTINCT },
-                    5,
-                ),
-            ).toEqual('5');
-            expect(
-                formatFieldValue({ ...metric, type: MetricType.SUM }, 5),
-            ).toEqual('5');
-        });
-    });
-    describe('format item value', () => {
-        test('formatItemValue should return the right format when field is undefined', async () => {
-            expect(formatItemValue(undefined, undefined)).toEqual('-');
-            expect(formatItemValue(undefined, null)).toEqual('∅');
-            expect(formatItemValue(undefined, '5')).toEqual('5');
-            expect(formatItemValue(undefined, 5)).toEqual('5');
-        });
+                // @ts-ignore
+                service.metricQueryWithLimit(METRIC_QUERY, undefined),
+            ).toEqual(METRIC_QUERY); // Returns same metricquery
 
-        test('formatItemValue should return the right format when field is table calculation', async () => {
-            expect(formatItemValue(tableCalculation, undefined)).toEqual('-');
-            expect(formatItemValue(tableCalculation, null)).toEqual('∅');
-            expect(formatItemValue(tableCalculation, '5')).toEqual('5');
-            expect(formatItemValue(tableCalculation, 5)).toEqual('5');
+            expect(
+                // @ts-ignore
+                service.metricQueryWithLimit(METRIC_QUERY, 5).limit,
+            ).toEqual(5);
+            expect(
+                // @ts-ignore
+                service.metricQueryWithLimit(METRIC_QUERY, null).limit,
+            ).toEqual(33333);
+            expect(
+                // @ts-ignore
+                service.metricQueryWithLimit(METRIC_QUERY, 9999).limit,
+            ).toEqual(9999);
+            expect(
+                // @ts-ignore
+                service.metricQueryWithLimit(METRIC_QUERY, 9999999).limit,
+            ).toEqual(33333);
+
+            const metricWithoutRows = {
+                ...METRIC_QUERY,
+                dimensions: [],
+                metrics: [],
+                tableCalculations: [],
+            };
+            expect(() =>
+                // @ts-ignore
+                service.metricQueryWithLimit(metricWithoutRows, null),
+            ).toThrowError(ParameterError);
+
+            const metricWithDimension = { ...METRIC_QUERY, metrics: [] };
+            expect(
+                // @ts-ignore
+                service.metricQueryWithLimit(metricWithDimension, null).limit,
+            ).toEqual(50000);
         });
     });
 });

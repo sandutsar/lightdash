@@ -1,115 +1,143 @@
-import { InputGroup, NumericInput, TagInput } from '@blueprintjs/core';
 import {
-    FilterableField,
+    assertUnreachable,
     FilterOperator,
-    FilterRule,
     FilterType,
-} from 'common';
-import React, { FC } from 'react';
+    isFilterRule,
+    isTableCalculation,
+    type ConditionalRule,
+} from '@lightdash/common';
+import isString from 'lodash/isString';
+import { type FilterInputsProps } from '.';
+import { TagInput } from '../../TagInput/TagInput';
 import { useFiltersContext } from '../FiltersProvider';
-import StringMultiSelect from './StringAutoComplete';
+import { getPlaceholderByFilterTypeAndOperator } from '../utils/getPlaceholderByFilterTypeAndOperator';
+import FilterMultiStringInput from './FilterMultiStringInput';
+import FilterNumberInput from './FilterNumberInput';
+import FilterStringAutoComplete from './FilterStringAutoComplete';
 
-export type FilterInputsProps<T extends FilterRule = FilterRule> = {
-    filterType: FilterType;
-    field: FilterableField;
-    filterRule: T;
-    onChange: (value: FilterRule) => void;
-};
-
-const DefaultFilterInputs: FC<FilterInputsProps> = ({
+const DefaultFilterInputs = <T extends ConditionalRule>({
+    field,
     filterType,
-    filterRule,
+    rule,
+    disabled,
     onChange,
-}) => {
+    popoverProps,
+}: FilterInputsProps<T>) => {
     const { getField } = useFiltersContext();
-    const suggestions = getField(filterRule)?.suggestions;
-    const filterOperator = filterRule.operator;
-    switch (filterRule.operator) {
+    const suggestions = isFilterRule(rule)
+        ? getField(rule)?.suggestions
+        : undefined;
+
+    const placeholder = getPlaceholderByFilterTypeAndOperator({
+        type: filterType,
+        operator: rule.operator,
+        disabled: isFilterRule(rule)
+            ? rule.disabled && !rule.values
+            : undefined,
+    });
+
+    switch (rule.operator) {
         case FilterOperator.NULL:
         case FilterOperator.NOT_NULL:
             return <span style={{ width: '100%' }} />;
-        case FilterOperator.EQUALS:
-        case FilterOperator.NOT_EQUALS: {
-            if (
-                filterType === FilterType.STRING &&
-                suggestions &&
-                suggestions.length > 0
-            ) {
-                return (
-                    <StringMultiSelect
-                        values={filterRule.values || []}
-                        suggestions={suggestions}
-                        onChange={(values) =>
-                            onChange({
-                                ...filterRule,
-                                values,
-                            })
-                        }
-                    />
-                );
-            }
-            return (
-                <TagInput
-                    fill
-                    addOnBlur
-                    inputProps={{
-                        type:
-                            filterType === FilterType.NUMBER
-                                ? 'number'
-                                : 'text',
-                    }}
-                    tagProps={{ minimal: true }}
-                    values={filterRule.values || []}
-                    onChange={(values) =>
-                        onChange({
-                            ...filterRule,
-                            values,
-                        })
-                    }
-                />
-            );
-        }
-
         case FilterOperator.STARTS_WITH:
+        case FilterOperator.ENDS_WITH:
         case FilterOperator.INCLUDE:
         case FilterOperator.NOT_INCLUDE:
-            return (
-                <InputGroup
-                    fill
-                    value={filterRule.values?.[0] || ''}
-                    onChange={(e) =>
-                        onChange({
-                            ...filterRule,
-                            values: [e.currentTarget.value],
-                        })
-                    }
-                />
-            );
+        case FilterOperator.EQUALS:
+        case FilterOperator.NOT_EQUALS: {
+            switch (filterType) {
+                case FilterType.STRING:
+                    return isTableCalculation(field) ? (
+                        <FilterMultiStringInput
+                            disabled={disabled}
+                            placeholder={placeholder}
+                            withinPortal={popoverProps?.withinPortal}
+                            onDropdownOpen={popoverProps?.onOpen}
+                            onDropdownClose={popoverProps?.onClose}
+                            values={(rule.values || []).filter(isString)}
+                            onChange={(values) =>
+                                onChange({
+                                    ...rule,
+                                    values,
+                                })
+                            }
+                        />
+                    ) : (
+                        <FilterStringAutoComplete
+                            filterId={rule.id}
+                            disabled={disabled}
+                            field={field}
+                            placeholder={placeholder}
+                            suggestions={suggestions || []}
+                            withinPortal={popoverProps?.withinPortal}
+                            onDropdownOpen={popoverProps?.onOpen}
+                            onDropdownClose={popoverProps?.onClose}
+                            values={(rule.values || []).filter(isString)}
+                            onChange={(values) =>
+                                onChange({
+                                    ...rule,
+                                    values,
+                                })
+                            }
+                        />
+                    );
+
+                case FilterType.NUMBER:
+                case FilterType.BOOLEAN:
+                case FilterType.DATE:
+                    return (
+                        <TagInput
+                            w="100%"
+                            clearable
+                            size="xs"
+                            disabled={disabled}
+                            placeholder={placeholder}
+                            allowDuplicates={false}
+                            validationRegex={
+                                filterType === FilterType.NUMBER
+                                    ? /^-?\d+(\.\d+)?$/
+                                    : undefined
+                            }
+                            value={rule.values?.map(String)}
+                            onChange={(values) => onChange({ ...rule, values })}
+                        />
+                    );
+                default:
+                    return assertUnreachable(
+                        filterType,
+                        `No form implemented for DefaultFilterInputs filter type ${filterType}`,
+                    );
+            }
+        }
         case FilterOperator.GREATER_THAN:
         case FilterOperator.GREATER_THAN_OR_EQUAL:
         case FilterOperator.LESS_THAN:
         case FilterOperator.LESS_THAN_OR_EQUAL:
         case FilterOperator.IN_THE_PAST:
-            const parsedValue = parseInt(filterRule.values?.[0], 10);
+        case FilterOperator.NOT_IN_THE_PAST:
+        case FilterOperator.IN_THE_NEXT:
+        case FilterOperator.IN_THE_CURRENT:
+        case FilterOperator.NOT_IN_THE_CURRENT:
+        case FilterOperator.IN_BETWEEN:
             return (
-                <NumericInput
-                    fill
-                    value={isNaN(parsedValue) ? undefined : parsedValue}
-                    min={0}
-                    onValueChange={(value) =>
+                <FilterNumberInput
+                    disabled={disabled}
+                    placeholder={placeholder}
+                    value={rule.values?.[0]}
+                    onChange={(newValue) => {
                         onChange({
-                            ...filterRule,
-                            values: [value],
-                        })
-                    }
+                            ...rule,
+                            values: newValue !== null ? [newValue] : [],
+                        });
+                    }}
                 />
             );
-        default: {
-            const never: never = filterRule.operator;
-            throw Error(
-                `No form implemented for String filter operator ${filterOperator}`,
+        default:
+            return assertUnreachable(
+                rule.operator,
+                `No form implemented for String filter operator ${rule.operator}`,
             );
-        }
     }
 };
 

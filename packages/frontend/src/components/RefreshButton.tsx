@@ -1,60 +1,103 @@
-import { KeyCombo, useHotkeys } from '@blueprintjs/core';
-import { Tooltip2 } from '@blueprintjs/popover2';
-import React, { useCallback, useMemo } from 'react';
-import { useExplorer } from '../providers/ExplorerProvider';
+import {
+    Button,
+    Group,
+    Kbd,
+    MantineProvider,
+    Text,
+    Tooltip,
+    type MantineSize,
+} from '@mantine/core';
+import { useHotkeys, useOs } from '@mantine/hooks';
+import { IconPlayerPlay } from '@tabler/icons-react';
+import { memo, useCallback, type FC } from 'react';
+import useHealth from '../hooks/health/useHealth';
+import { useExplorerContext } from '../providers/ExplorerProvider';
 import { useTracking } from '../providers/TrackingProvider';
 import { EventName } from '../types/Events';
-import { BigButton } from './common/BigButton';
+import MantineIcon from './common/MantineIcon';
+import LimitButton from './LimitButton';
 
-export const RefreshButton = () => {
-    const {
-        state: { isValidQuery },
-        queryResults: { isLoading: isLoadingResults },
-        actions: { fetchResults },
-    } = useExplorer();
-    const { track } = useTracking();
-    const isDisabled = !isValidQuery;
-    const onClick = useCallback(async () => {
-        fetchResults();
-        track({
-            name: EventName.RUN_QUERY_BUTTON_CLICKED,
-        });
-    }, [fetchResults, track]);
-    const hotkeys = useMemo(() => {
-        const runQueryHotkey = {
-            combo: 'ctrl+enter',
-            group: 'Explorer',
-            label: 'Run query',
-            allowInInput: true,
-            onKeyDown: onClick,
-            global: true,
-            preventDefault: true,
-            stopPropagation: true,
-        };
-        return [
-            runQueryHotkey,
-            {
-                ...runQueryHotkey,
-                combo: 'cmd+enter',
-            },
-        ];
-    }, [onClick]);
-    useHotkeys(hotkeys);
-    return (
-        <Tooltip2
-            content={<KeyCombo combo="cmd+enter" />}
-            position="bottom"
-            disabled={isDisabled || isLoadingResults}
-        >
-            <BigButton
-                intent="primary"
-                style={{ width: 150, marginRight: '10px' }}
-                onClick={onClick}
-                disabled={isDisabled}
-                loading={isLoadingResults}
-            >
-                Run query
-            </BigButton>
-        </Tooltip2>
+export const RefreshButton: FC<{ size?: MantineSize }> = memo(({ size }) => {
+    const health = useHealth();
+    const maxLimit = health.data?.query.maxLimit ?? 5000;
+
+    const os = useOs();
+    const limit = useExplorerContext(
+        (context) => context.state.unsavedChartVersion.metricQuery.limit,
     );
-};
+    const setRowLimit = useExplorerContext(
+        (context) => context.actions.setRowLimit,
+    );
+    const isValidQuery = useExplorerContext(
+        (context) => context.state.isValidQuery,
+    );
+    const isLoading = useExplorerContext(
+        (context) => context.queryResults.isLoading,
+    );
+    const fetchResults = useExplorerContext(
+        (context) => context.actions.fetchResults,
+    );
+
+    const canRunQuery = isValidQuery;
+
+    const { track } = useTracking();
+
+    const onClick = useCallback(() => {
+        if (canRunQuery) {
+            fetchResults();
+            track({ name: EventName.RUN_QUERY_BUTTON_CLICKED });
+        }
+    }, [fetchResults, track, canRunQuery]);
+
+    useHotkeys([['mod + enter', onClick, { preventDefault: true }]]);
+
+    return (
+        <Button.Group>
+            <Tooltip
+                label={
+                    <MantineProvider inherit theme={{ colorScheme: 'dark' }}>
+                        <Group spacing="xxs">
+                            <Kbd fw={600}>
+                                {os === 'macos' || os === 'ios' ? '⌘' : 'ctrl'}
+                            </Kbd>
+
+                            <Text fw={600}>+</Text>
+
+                            <Kbd fw={600}>Enter</Kbd>
+                        </Group>
+                    </MantineProvider>
+                }
+                position="bottom"
+                withArrow
+                withinPortal
+                disabled={isLoading || !isValidQuery}
+            >
+                <Button
+                    pr="xxs"
+                    size={size}
+                    disabled={!isValidQuery}
+                    leftIcon={<MantineIcon icon={IconPlayerPlay} />}
+                    loading={isLoading}
+                    onClick={onClick}
+                    sx={(theme) => ({
+                        flex: 1,
+                        borderRight: `1px solid ${theme.fn.rgba(
+                            theme.colors.gray[5],
+                            0.6,
+                        )}`,
+                    })}
+                >
+                    Run query ({limit})
+                </Button>
+            </Tooltip>
+
+            <LimitButton
+                disabled={!isValidQuery}
+                size={size}
+                maxLimit={maxLimit}
+                limit={limit}
+                onLimitChange={setRowLimit}
+            />
+        </Button.Group>
+    );
+});

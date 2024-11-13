@@ -1,24 +1,40 @@
+import { subject } from '@casl/ability';
 import {
+    assertUnreachable,
+    getCustomLabelsFromColumnProperties,
+    type ApiScheduledDownloadCsv,
+} from '@lightdash/common';
+import {
+    ActionIcon,
     Button,
-    Divider,
-    FormGroup,
-    HTMLSelect,
-    Icon,
-    Intent,
-    PopoverPosition,
-} from '@blueprintjs/core';
-import { Classes, Popover2 } from '@blueprintjs/popover2';
-import { ChartType } from 'common';
-import EChartsReact from 'echarts-for-react';
+    Popover,
+    SegmentedControl,
+    Select,
+    Stack,
+    Text,
+} from '@mantine/core';
+import { IconDownload, IconShare2 } from '@tabler/icons-react';
+import { type EChartsInstance } from 'echarts-for-react';
 import JsPDF from 'jspdf';
-import React, { RefObject, useCallback, useState } from 'react';
-import { CSVLink } from 'react-csv';
-import { useExplorer } from '../providers/ExplorerProvider';
+import React, { memo, useCallback, useState } from 'react';
+import useEchartsCartesianConfig from '../hooks/echarts/useEchartsCartesianConfig';
+import { useApp } from '../providers/AppProvider';
+import { Can } from './common/Authorization';
+import {
+    COLLAPSABLE_CARD_ACTION_ICON_PROPS,
+    COLLAPSABLE_CARD_POPOVER_PROPS,
+} from './common/CollapsableCard';
+import MantineIcon from './common/MantineIcon';
+import ExportSelector from './ExportSelector';
+import { isBigNumberVisualizationConfig } from './LightdashVisualization/VisualizationBigNumberConfig';
+import { isCartesianVisualizationConfig } from './LightdashVisualization/VisualizationConfigCartesian';
+import { isTableVisualizationConfig } from './LightdashVisualization/VisualizationConfigTable';
+import { isCustomVisualizationConfig } from './LightdashVisualization/VisualizationCustomConfig';
 import { useVisualizationContext } from './LightdashVisualization/VisualizationProvider';
 
 const FILE_NAME = 'lightdash_chart';
 
-enum DownloadType {
+export enum DownloadType {
     JPEG = 'JPEG',
     PNG = 'PNG',
     SVG = 'SVG',
@@ -26,11 +42,12 @@ enum DownloadType {
     JSON = 'JSON',
 }
 
-async function base64SvgToBase64Image(
+const base64SvgToBase64Image = async (
     originalBase64: string,
     width: number,
     type: 'jpeg' | 'png' = 'png',
-): Promise<string> {
+    isBackgroundTransparent: boolean = false,
+): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = document.createElement('img');
         img.onload = () => {
@@ -42,7 +59,10 @@ async function base64SvgToBase64Image(
             canvas.height = width / ratio;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-                if (type === 'jpeg') {
+                if (
+                    type === 'jpeg' ||
+                    (type === 'png' && !isBackgroundTransparent)
+                ) {
                     ctx.fillStyle = 'white';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                 }
@@ -59,7 +79,7 @@ async function base64SvgToBase64Image(
         };
         img.src = originalBase64;
     });
-}
+};
 
 function downloadImage(base64: string) {
     const link = document.createElement('a');
@@ -100,149 +120,244 @@ function downloadPdf(base64: string, width: number, height: number) {
 }
 
 type DownloadOptions = {
-    chartRef: RefObject<EChartsReact>;
-    chartType: ChartType;
-    tableData: Record<string, any>[];
+    getChartInstance: () => EChartsInstance | undefined;
+    unavailableOptions?: DownloadType[];
 };
 export const ChartDownloadOptions: React.FC<DownloadOptions> = ({
-    chartRef,
-    chartType,
-    tableData,
+    getChartInstance,
+    unavailableOptions,
 }) => {
-    const [type, setType] = useState<DownloadType>(DownloadType.JPEG);
+    const [type, setType] = useState<DownloadType>(DownloadType.PNG);
+    const [isBackgroundTransparent, setIsBackgroundTransparent] =
+        useState(false);
 
-    const {
-        state: {
-            unsavedChartVersion: { tableName: activeTableName },
-        },
-    } = useExplorer();
-
-    const isTable = chartType === ChartType.TABLE;
     const onDownload = useCallback(async () => {
-        const echartsInstance = chartRef.current?.getEchartsInstance();
-
-        if (!echartsInstance) {
-            throw new Error('Chart instance not reachable');
+        const chartInstance = getChartInstance();
+        if (!chartInstance) {
+            console.error('Chart instance is not available');
+            return;
         }
 
-        const svgBase64 = echartsInstance.getDataURL();
-        const width = echartsInstance.getWidth();
-        const height = echartsInstance.getHeight();
+        try {
+            const svgBase64 = chartInstance.getDataURL();
+            const width = chartInstance.getWidth();
+            const height = chartInstance.getHeight();
 
-        switch (type) {
-            case DownloadType.PDF:
-                downloadPdf(
-                    await base64SvgToBase64Image(svgBase64, width),
-                    width,
-                    height,
-                );
-                break;
-            case DownloadType.SVG:
-                downloadImage(svgBase64);
-                break;
-            case DownloadType.JPEG:
-                downloadImage(
-                    await base64SvgToBase64Image(svgBase64, width, 'jpeg'),
-                );
-                break;
-            case DownloadType.PNG:
-                downloadImage(await base64SvgToBase64Image(svgBase64, width));
-                break;
-            case DownloadType.JSON:
-                downloadJson(echartsInstance.getOption());
-                break;
-            default: {
-                const never: never = type;
-                throw new Error(`Unexpected download type: ${type}`);
+            switch (type) {
+                case DownloadType.PDF:
+                    downloadPdf(
+                        await base64SvgToBase64Image(svgBase64, width),
+                        width,
+                        height,
+                    );
+                    break;
+                case DownloadType.SVG:
+                    downloadImage(svgBase64);
+                    break;
+                case DownloadType.JPEG:
+                    downloadImage(
+                        await base64SvgToBase64Image(svgBase64, width, 'jpeg'),
+                    );
+                    break;
+                case DownloadType.PNG:
+                    downloadImage(
+                        await base64SvgToBase64Image(
+                            svgBase64,
+                            width,
+                            'png',
+                            isBackgroundTransparent,
+                        ),
+                    );
+                    break;
+                case DownloadType.JSON:
+                    downloadJson(chartInstance.getOption());
+                    break;
+                default: {
+                    assertUnreachable(
+                        type,
+                        `Unexpected download type: ${type}`,
+                    );
+                }
             }
+        } catch (e) {
+            console.error(`Unable to download ${type} from chart ${e}`);
         }
-    }, [chartRef, type]);
+    }, [getChartInstance, type, isBackgroundTransparent]);
 
     return (
-        <div
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                justifyContent: 'flex-start',
-            }}
-        >
-            <span>
-                <b>Options</b>
-            </span>
-            <Divider />
-            <FormGroup label="File format" labelFor="download-type" inline>
-                {isTable ? (
-                    <CSVLink
-                        role="button"
-                        tabIndex={0}
-                        className="bp4-button"
-                        data={tableData.map((row: {}) => row)}
-                        filename={`lightdash-${
-                            activeTableName || 'export'
-                        }-${new Date().toISOString().slice(0, 10)}.csv`}
-                        target="_blank"
-                    >
-                        <Icon icon="export" />
-                        <span>Export CSV</span>
-                    </CSVLink>
-                ) : (
-                    <HTMLSelect
-                        id="download-type"
-                        value={type}
-                        onChange={(e) =>
-                            setType(e.currentTarget.value as DownloadType)
-                        }
-                        options={Object.values(DownloadType).map(
-                            (downloadType) => ({
-                                value: downloadType,
-                                label: downloadType,
-                            }),
-                        )}
-                    />
-                )}
-            </FormGroup>
-            <Divider />
-            {!isTable && (
-                <Button
-                    style={{ alignSelf: 'flex-end' }}
-                    intent={Intent.PRIMARY}
-                    icon="cloud-download"
-                    text="Download"
-                    onClick={onDownload}
+        <Stack>
+            <Text fw={500}>Options</Text>
+            <Select
+                size="xs"
+                id="download-type"
+                value={type}
+                onChange={(value) => setType(value as DownloadType)}
+                data={Object.values(DownloadType)
+                    .filter(
+                        (downloadType) =>
+                            !unavailableOptions?.includes(downloadType),
+                    )
+                    .map((downloadType) => ({
+                        value: downloadType,
+                        label: downloadType,
+                    }))}
+            />
+            {type === DownloadType.PNG && (
+                <SegmentedControl
+                    size="xs"
+                    id="background-transparency"
+                    value={isBackgroundTransparent ? 'Transparent' : 'Opaque'}
+                    onChange={(value) =>
+                        setIsBackgroundTransparent(value === 'Transparent')
+                    }
+                    data={[
+                        { value: 'Opaque', label: 'Opaque' },
+                        { value: 'Transparent', label: 'Transparent' },
+                    ]}
                 />
             )}
-        </div>
-    );
-};
-
-export const ChartDownloadMenu: React.FC = () => {
-    const { chartRef, chartType, plotData } = useVisualizationContext();
-    const [isOpen, setIsOpen] = useState(false);
-    const disabled = !plotData || chartType === ChartType.BIG_NUMBER;
-
-    return (
-        <Popover2
-            content={
-                <ChartDownloadOptions
-                    chartRef={chartRef}
-                    chartType={chartType}
-                    tableData={plotData || []}
-                />
-            }
-            popoverClassName={Classes.POPOVER2_CONTENT_SIZING}
-            isOpen={isOpen}
-            onInteraction={setIsOpen}
-            position={PopoverPosition.BOTTOM_LEFT}
-            lazy={false}
-            disabled={disabled}
-        >
             <Button
-                minimal
-                rightIcon="caret-down"
-                text="Export as"
-                disabled={disabled}
-            />
-        </Popover2>
+                size="xs"
+                ml="auto"
+                leftIcon={<MantineIcon icon={IconDownload} />}
+                onClick={onDownload}
+            >
+                Download
+            </Button>
+        </Stack>
     );
 };
+
+interface ChartDownloadMenuProps {
+    projectUuid: string;
+    getCsvLink?: (
+        limit: number | null,
+        onlyRaw: boolean,
+        showTableNames: boolean,
+        columnOrder: string[],
+        customLabels?: Record<string, string>,
+    ) => Promise<ApiScheduledDownloadCsv>;
+    getGsheetLink?: (
+        columnOrder: string[],
+        showTableNames: boolean,
+        customLabels?: Record<string, string>,
+    ) => Promise<ApiScheduledDownloadCsv>;
+}
+
+export const ChartDownloadMenu: React.FC<ChartDownloadMenuProps> = memo(
+    ({ getCsvLink, getGsheetLink, projectUuid }) => {
+        const { chartRef, visualizationConfig, resultsData } =
+            useVisualizationContext();
+
+        const eChartsOptions = useEchartsCartesianConfig();
+
+        const disabled =
+            (isTableVisualizationConfig(visualizationConfig) &&
+                resultsData?.rows &&
+                resultsData.rows.length <= 0) ||
+            !resultsData?.metricQuery ||
+            isBigNumberVisualizationConfig(visualizationConfig) ||
+            (isCartesianVisualizationConfig(visualizationConfig) &&
+                !eChartsOptions) ||
+            isCustomVisualizationConfig(visualizationConfig);
+
+        const { user } = useApp();
+
+        const getChartInstance = useCallback(
+            () => chartRef.current?.getEchartsInstance(),
+            [chartRef],
+        );
+
+        return isTableVisualizationConfig(visualizationConfig) && getCsvLink ? (
+            <Can
+                I="manage"
+                this={subject('ExportCsv', {
+                    organizationUuid: user.data?.organizationUuid,
+                    projectUuid,
+                })}
+            >
+                <Popover
+                    {...COLLAPSABLE_CARD_POPOVER_PROPS}
+                    disabled={disabled}
+                    position="bottom-end"
+                >
+                    <Popover.Target>
+                        <ActionIcon
+                            data-testid="export-csv-button"
+                            {...COLLAPSABLE_CARD_ACTION_ICON_PROPS}
+                            disabled={disabled}
+                        >
+                            <MantineIcon icon={IconShare2} color="gray" />
+                        </ActionIcon>
+                    </Popover.Target>
+
+                    <Popover.Dropdown>
+                        <ExportSelector
+                            projectUuid={projectUuid}
+                            rows={resultsData?.rows}
+                            getCsvLink={async (
+                                limit: number | null,
+                                onlyRaw: boolean,
+                            ) =>
+                                getCsvLink(
+                                    limit,
+                                    onlyRaw,
+                                    visualizationConfig.chartConfig
+                                        .showTableNames,
+                                    visualizationConfig.chartConfig.columnOrder,
+                                    getCustomLabelsFromColumnProperties(
+                                        visualizationConfig.chartConfig
+                                            .columnProperties,
+                                    ),
+                                )
+                            }
+                            getGsheetLink={
+                                getGsheetLink === undefined
+                                    ? undefined
+                                    : () =>
+                                          getGsheetLink(
+                                              visualizationConfig.chartConfig
+                                                  .columnOrder,
+                                              visualizationConfig.chartConfig
+                                                  .showTableNames,
+                                              getCustomLabelsFromColumnProperties(
+                                                  visualizationConfig
+                                                      .chartConfig
+                                                      .columnProperties,
+                                              ),
+                                          )
+                            }
+                        />
+                    </Popover.Dropdown>
+                </Popover>
+            </Can>
+        ) : isTableVisualizationConfig(visualizationConfig) &&
+          !getCsvLink ? null : (
+            <Popover
+                {...COLLAPSABLE_CARD_POPOVER_PROPS}
+                disabled={disabled}
+                position="bottom-end"
+            >
+                <Popover.Target>
+                    <ActionIcon
+                        data-testid="export-csv-button"
+                        {...COLLAPSABLE_CARD_ACTION_ICON_PROPS}
+                        disabled={disabled}
+                    >
+                        <MantineIcon icon={IconShare2} color="gray" />
+                    </ActionIcon>
+                </Popover.Target>
+
+                <Popover.Dropdown>
+                    {visualizationConfig?.chartType &&
+                    !isTableVisualizationConfig(visualizationConfig) &&
+                    chartRef.current ? (
+                        <ChartDownloadOptions
+                            getChartInstance={getChartInstance}
+                        />
+                    ) : null}
+                </Popover.Dropdown>
+            </Popover>
+        );
+    },
+);

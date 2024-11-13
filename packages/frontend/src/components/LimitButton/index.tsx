@@ -1,61 +1,64 @@
-import { NumericInput } from '@blueprintjs/core';
-import { Classes, Popover2 } from '@blueprintjs/popover2';
-import React, { FC, useState } from 'react';
-import {
-    ApplyButton,
-    GreyButton,
-    Label,
-    PopupWrapper,
-} from './LimitButton.styles';
+import { Button, Popover, type MantineSize } from '@mantine/core';
+import { useClickOutside, useDisclosure } from '@mantine/hooks';
+import { IconChevronDown } from '@tabler/icons-react';
+import { memo, type FC } from 'react';
+import MantineIcon from '../common/MantineIcon';
+import LimitForm from './LimitForm';
 
-type Props = {
+export type Props = {
+    size?: MantineSize;
     disabled?: boolean;
+    maxLimit: number;
     limit: number;
     onLimitChange: (value: number) => void;
 };
 
-const LimitButton: FC<Props> = ({ disabled, limit, onLimitChange }) => {
-    const [isOpen, setIsOpen] = useState<boolean>(false);
-    const [innerLimit, setInnerLimit] = useState<number>(limit);
-    return (
-        <Popover2
-            content={
-                <PopupWrapper>
-                    <Label label="Total rows:" inline>
-                        <NumericInput
-                            fill
-                            min={0}
-                            buttonPosition="none"
-                            value={innerLimit}
-                            onValueChange={setInnerLimit}
-                        />
-                    </Label>
-                    <ApplyButton
-                        text="Apply"
-                        intent="primary"
-                        onClick={() => {
-                            onLimitChange(innerLimit);
-                            setIsOpen(false);
-                        }}
-                    />
-                </PopupWrapper>
-            }
-            interactionKind="click"
-            popoverClassName={Classes.POPOVER2_CONTENT_SIZING}
-            isOpen={isOpen}
-            onInteraction={setIsOpen}
-            position="bottom"
-            lazy={false}
-            disabled={disabled}
-        >
-            <GreyButton
-                minimal
-                rightIcon="caret-down"
-                text={`Limit: ${limit}`}
+const LimitButton: FC<Props> = memo(
+    ({ size, disabled, maxLimit, limit, onLimitChange }) => {
+        const [opened, { open, close }] = useDisclosure(false);
+        const ref = useClickOutside(
+            () => setTimeout(() => close(), 0),
+            ['mouseup', 'touchend'],
+        );
+
+        const handleLimitChange = (value: number) => {
+            onLimitChange(value);
+            close();
+        };
+
+        return (
+            <Popover
+                withinPortal
                 disabled={disabled}
-            />
-        </Popover2>
-    );
-};
+                opened={opened}
+                position="bottom-end"
+                withArrow
+                shadow="md"
+                offset={2}
+                arrowOffset={10}
+            >
+                <Popover.Target>
+                    <Button
+                        size={size}
+                        p="xs"
+                        disabled={disabled}
+                        onClick={opened ? undefined : open}
+                    >
+                        <MantineIcon icon={IconChevronDown} size="sm" />
+                    </Button>
+                </Popover.Target>
+
+                <Popover.Dropdown>
+                    <LimitForm
+                        ref={ref}
+                        maxLimit={maxLimit}
+                        limit={limit}
+                        onLimitChange={handleLimitChange}
+                    />
+                </Popover.Dropdown>
+            </Popover>
+        );
+    },
+);
 
 export default LimitButton;

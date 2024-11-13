@@ -1,5 +1,9 @@
-import { ApiError, OnboardingStatus, ProjectSavedChartStatus } from 'common';
-import { useMutation, useQuery } from 'react-query';
+import {
+    type ApiError,
+    type OnboardingStatus,
+    type ProjectSavedChartStatus,
+} from '@lightdash/common';
+import { useQuery } from '@tanstack/react-query';
 import { lightdashApi } from '../api';
 
 const getOnboardingStatus = async () =>
@@ -15,18 +19,6 @@ export const useOnboardingStatus = () =>
         queryFn: getOnboardingStatus,
         retry: false,
         refetchOnMount: true,
-    });
-
-const setOnboardingShownSuccess = async () =>
-    lightdashApi<undefined>({
-        url: `/org/onboardingStatus/shownSuccess`,
-        method: 'POST',
-        body: undefined,
-    });
-
-export const useOnboardingShownSuccess = () =>
-    useMutation<void, ApiError, void>(setOnboardingShownSuccess, {
-        mutationKey: ['onboarding_shown_success'],
     });
 
 const getProjectSavedChartStatus = async (projectUuid: string) =>

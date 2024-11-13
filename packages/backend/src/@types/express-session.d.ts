@@ -5,6 +5,9 @@ declare module 'express-session' {
         oauth: {
             inviteCode?: string | undefined;
             returnTo?: string | undefined;
+            codeVerifier?: string | undefined;
+            state?: string | undefined;
+            isPopup?: boolean | undefined;
         };
     }
 }

@@ -1,5 +1,5 @@
-import { Project } from 'common';
-import React, { createContext, FC, useContext } from 'react';
+import { type Project } from '@lightdash/common';
+import { createContext, useContext, type FC } from 'react';
 
 type ProjectFormContext = {
     savedProject?: Project;
@@ -7,10 +7,9 @@ type ProjectFormContext = {
 
 const Context = createContext<ProjectFormContext | undefined>(undefined);
 
-export const ProjectFormProvider: FC<ProjectFormContext> = ({
-    savedProject,
-    children,
-}) => {
+export const ProjectFormProvider: FC<
+    React.PropsWithChildren<ProjectFormContext>
+> = ({ savedProject, children }) => {
     return (
         <Context.Provider value={{ savedProject }}>{children}</Context.Provider>
     );

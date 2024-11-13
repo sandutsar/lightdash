@@ -1,18 +1,19 @@
 import {
     CreateWarehouseCredentials,
     DbtProjectEnvironmentVariable,
-} from 'common';
-import { writeFileSync } from 'fs';
+    SupportedDbtVersions,
+} from '@lightdash/common';
+import { WarehouseClient } from '@lightdash/warehouses';
+import fs, { writeFileSync } from 'fs';
 import * as fspromises from 'fs/promises';
 import * as path from 'path';
-import tempy from 'tempy';
 import {
     LIGHTDASH_PROFILE_NAME,
     LIGHTDASH_TARGET_NAME,
     profileFromCredentials,
 } from '../dbt/profiles';
-import Logger from '../logger';
-import { CachedWarehouse, WarehouseClient } from '../types';
+import Logger from '../logging/logger';
+import { CachedWarehouse } from '../types';
 import { DbtLocalProjectAdapter } from './dbtLocalProjectAdapter';
 
 type DbtLocalCredentialsProjectAdapterArgs = {
@@ -22,6 +23,8 @@ type DbtLocalCredentialsProjectAdapterArgs = {
     targetName: string | undefined;
     environment: DbtProjectEnvironmentVariable[] | undefined;
     cachedWarehouse: CachedWarehouse;
+    dbtVersion: SupportedDbtVersions;
+    useDbtLs: boolean;
 };
 
 export class DbtLocalCredentialsProjectAdapter extends DbtLocalProjectAdapter {
@@ -34,11 +37,26 @@ export class DbtLocalCredentialsProjectAdapter extends DbtLocalProjectAdapter {
         targetName,
         environment,
         cachedWarehouse,
+        dbtVersion,
+        useDbtLs,
     }: DbtLocalCredentialsProjectAdapterArgs) {
-        const profilesDir = tempy.directory();
+        const profilesDir = fs.mkdtempSync('/tmp/local_');
         const profilesFilename = path.join(profilesDir, 'profiles.yml');
-        const { profile, environment: injectedEnvironment } =
-            profileFromCredentials(warehouseCredentials, targetName);
+
+        const {
+            profile,
+            environment: injectedEnvironment,
+            files,
+        } = profileFromCredentials(
+            warehouseCredentials,
+            profilesDir,
+            targetName,
+        );
+        if (files) {
+            Object.entries(files).forEach(([filePath, content]) => {
+                writeFileSync(filePath, content);
+            });
+        }
         writeFileSync(profilesFilename, profile);
         const e = (environment || []).reduce<Record<string, string>>(
             (previousValue, { key, value }) => ({
@@ -59,6 +77,8 @@ export class DbtLocalCredentialsProjectAdapter extends DbtLocalProjectAdapter {
             projectDir,
             environment: updatedEnvironment,
             cachedWarehouse,
+            dbtVersion,
+            useDbtLs,
         });
         this.profilesDir = profilesDir;
     }

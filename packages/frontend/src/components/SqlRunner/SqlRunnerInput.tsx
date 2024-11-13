@@ -1,12 +1,13 @@
-import { Button, PopoverPosition } from '@blueprintjs/core';
-import { Tooltip2 } from '@blueprintjs/popover2';
+import { type ProjectCatalog } from '@lightdash/common';
+import { useLocalStorage } from '@mantine/hooks';
 import 'ace-builds/src-noconflict/mode-sql';
 import 'ace-builds/src-noconflict/theme-github';
-import { ProjectCatalog } from 'common';
-import React, { FC, useState } from 'react';
+import React, { type FC } from 'react';
 import AceEditor from 'react-ace';
-import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useProjectCatalogAceEditorCompleter } from '../../hooks/useProjectCatalogAceEditorCompleter';
+import { SqlEditorActions } from './SqlEditorActions';
+
+const SOFT_WRAP_LOCAL_STORAGE_KEY = 'lightdash-sql-runner-soft-wrap';
 
 const SqlRunnerInput: FC<{
     sql: string;
@@ -14,9 +15,13 @@ const SqlRunnerInput: FC<{
     onChange: (value: string) => void;
     projectCatalog: ProjectCatalog | undefined;
 }> = ({ sql, onChange, isDisabled, projectCatalog }) => {
-    const [copied, setCopied] = useState<boolean>(false);
     const { setAceEditor } =
         useProjectCatalogAceEditorCompleter(projectCatalog);
+
+    const [isSoftWrapEnabled, setSoftWrapEnabled] = useLocalStorage({
+        key: SOFT_WRAP_LOCAL_STORAGE_KEY,
+        defaultValue: true,
+    });
 
     return (
         <div
@@ -37,28 +42,15 @@ const SqlRunnerInput: FC<{
                 enableLiveAutocompletion
                 onChange={(value: string) => {
                     onChange(value);
-                    setCopied(false);
                 }}
                 onLoad={setAceEditor}
+                wrapEnabled={isSoftWrapEnabled}
             />
-            <div
-                style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    right: 0,
-                }}
-            >
-                <Tooltip2
-                    isOpen={copied}
-                    content="Copied to clipboard!"
-                    intent="success"
-                    position={PopoverPosition.RIGHT}
-                >
-                    <CopyToClipboard text={sql} onCopy={() => setCopied(true)}>
-                        <Button minimal icon="clipboard" />
-                    </CopyToClipboard>
-                </Tooltip2>
-            </div>
+            <SqlEditorActions
+                isSoftWrapEnabled={isSoftWrapEnabled}
+                onToggleSoftWrap={() => setSoftWrapEnabled(!isSoftWrapEnabled)}
+                clipboardContent={sql}
+            />
         </div>
     );
 };

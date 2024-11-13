@@ -1,7 +1,7 @@
-import { ApiError, TablesConfiguration } from 'common';
-import { useMutation, useQuery, useQueryClient } from 'react-query';
+import { type ApiError, type TablesConfiguration } from '@lightdash/common';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lightdashApi } from '../api';
-import { useApp } from '../providers/AppProvider';
+import useToaster from './toaster/useToaster';
 import useQueryError from './useQueryError';
 
 const getProjectTablesConfigurationQuery = async (projectUuid: string) =>
@@ -31,14 +31,14 @@ export const useProjectTablesConfiguration = (projectUuid: string) => {
 };
 
 export const useUpdateProjectTablesConfiguration = (projectUuid: string) => {
-    const { showToastSuccess, showToastError } = useApp();
+    const { showToastSuccess, showToastApiError } = useToaster();
     const queryClient = useQueryClient();
     return useMutation<TablesConfiguration, ApiError, TablesConfiguration>(
         (data) => updateProjectTablesConfigurationQuery(projectUuid, data),
         {
             mutationKey: ['tables_configuration_update', projectUuid],
             onSuccess: async (data) => {
-                await queryClient.invalidateQueries('tables');
+                await queryClient.invalidateQueries(['tables']);
                 queryClient.setQueryData(
                     ['tables_configuration_update', projectUuid],
                     data,
@@ -47,10 +47,10 @@ export const useUpdateProjectTablesConfiguration = (projectUuid: string) => {
                     title: `Saved project configuration`,
                 });
             },
-            onError: (error) => {
-                showToastError({
+            onError: ({ error }) => {
+                showToastApiError({
                     title: `Failed to save tables configuration`,
-                    subtitle: error.error.message,
+                    apiError: error,
                 });
             },
         },

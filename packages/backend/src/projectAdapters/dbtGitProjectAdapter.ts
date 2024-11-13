@@ -2,32 +2,73 @@ import {
     AuthorizationError,
     CreateWarehouseCredentials,
     DbtProjectEnvironmentVariable,
+    NotFoundError,
+    SupportedDbtVersions,
     UnexpectedGitError,
     UnexpectedServerError,
-} from 'common';
+} from '@lightdash/common';
+import { WarehouseClient } from '@lightdash/warehouses';
+import fs from 'fs';
 import * as fspromises from 'fs-extra';
 import * as path from 'path';
-import simpleGit, { SimpleGit, SimpleGitProgressEvent } from 'simple-git';
-import tempy from 'tempy';
-import Logger from '../logger';
-import { CachedWarehouse, WarehouseClient } from '../types';
+import simpleGit, {
+    GitError,
+    SimpleGit,
+    SimpleGitProgressEvent,
+} from 'simple-git';
+import Logger from '../logging/logger';
+import { CachedWarehouse } from '../types';
 import { DbtLocalCredentialsProjectAdapter } from './dbtLocalCredentialsProjectAdapter';
 
 export type DbtGitProjectAdapterArgs = {
     warehouseClient: WarehouseClient;
     remoteRepositoryUrl: string;
+    repository: string;
     gitBranch: string;
     projectDirectorySubPath: string;
     warehouseCredentials: CreateWarehouseCredentials;
     targetName: string | undefined;
     environment: DbtProjectEnvironmentVariable[] | undefined;
     cachedWarehouse: CachedWarehouse;
+    dbtVersion: SupportedDbtVersions;
+    useDbtLs: boolean;
+};
+
+const stripTokensFromUrls = (raw: string) => {
+    const pattern = /\/\/(.*)@/g;
+    return raw.replace(pattern, '//*****@');
+};
+
+const gitErrorHandler = (e: Error, repository: string) => {
+    if (e.message.includes('Authentication failed')) {
+        throw new AuthorizationError(
+            'Git credentials not recognized for this repository',
+            { message: e.message },
+        );
+    }
+    if (e.message.includes('Repository not found')) {
+        throw new NotFoundError(
+            `Could not find Git repository "${repository}". Check that your personal access token has access to the repository and that the repository name is correct.`,
+        );
+    }
+    if (e instanceof GitError) {
+        throw new UnexpectedGitError(
+            `Error while running "${
+                e.task?.commands[0]
+            }": ${stripTokensFromUrls(e.message)}`,
+        );
+    }
+    throw new UnexpectedGitError(
+        `Unexpected error while cloning git repository: ${e}`,
+    );
 };
 
 export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
     localRepositoryDir: string;
 
     remoteRepositoryUrl: string;
+
+    repository: string;
 
     projectDirectorySubPath: string;
 
@@ -37,6 +78,7 @@ export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
 
     constructor({
         warehouseClient,
+        repository,
         remoteRepositoryUrl,
         gitBranch,
         projectDirectorySubPath,
@@ -44,10 +86,10 @@ export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
         targetName,
         environment,
         cachedWarehouse,
+        dbtVersion,
+        useDbtLs,
     }: DbtGitProjectAdapterArgs) {
-        const localRepositoryDir = tempy.directory({
-            prefix: 'git_',
-        });
+        const localRepositoryDir = fs.mkdtempSync('/tmp/git_');
         const projectDir = path.join(
             localRepositoryDir,
             projectDirectorySubPath,
@@ -59,11 +101,14 @@ export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
             targetName,
             environment,
             cachedWarehouse,
+            dbtVersion,
+            useDbtLs,
         });
         this.projectDirectorySubPath = projectDirectorySubPath;
         this.localRepositoryDir = localRepositoryDir;
         this.remoteRepositoryUrl = remoteRepositoryUrl;
         this.branch = gitBranch;
+        this.repository = repository;
         this.git = simpleGit({
             progress({ method, stage, progress }: SimpleGitProgressEvent) {
                 Logger.debug(
@@ -123,15 +168,7 @@ export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
                     defaultCloneOptions,
                 );
         } catch (e) {
-            if (e.message.includes('Authentication failed')) {
-                throw new AuthorizationError(
-                    'Git credentials not recognized for this repository',
-                    { message: e.message },
-                );
-            }
-            throw new UnexpectedGitError(
-                `Unexpected error while cloning git repository: ${e}`,
-            );
+            gitErrorHandler(e, this.repository);
         }
     }
 
@@ -149,9 +186,7 @@ export class DbtGitProjectAdapter extends DbtLocalCredentialsProjectAdapter {
                     '--progress': null,
                 });
         } catch (e) {
-            throw new UnexpectedGitError(
-                `Unexpected error while pulling git repository: ${e}`,
-            );
+            gitErrorHandler(e, this.repository);
         }
     }
 

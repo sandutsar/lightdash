@@ -1,53 +1,44 @@
-import { IconName } from '@blueprintjs/core';
 import {
-    ApiError,
-    ApiRefreshResults,
-    Job,
     JobStatusType,
-    JobStep,
     JobStepStatusType,
-} from 'common';
-import { useMutation, useQuery, useQueryClient } from 'react-query';
+    JobType,
+    type ApiError,
+    type ApiRefreshResults,
+    type Job,
+    type JobStep,
+} from '@lightdash/common';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { lightdashApi } from '../api';
-import { useApp } from '../providers/AppProvider';
+import { useActiveJob } from '../providers/ActiveJobProvider';
+import useToaster from './toaster/useToaster';
 
-export const jobStepStatusLabel = (
-    status: JobStepStatusType,
-): { label: string; icon: IconName } => {
+export const jobStepStatusLabel = (status: JobStepStatusType) => {
     switch (status) {
         case JobStepStatusType.DONE:
-            return { label: 'Completed', icon: 'tick-circle' };
+            return 'Completed';
         case JobStepStatusType.PENDING:
-            return { label: 'Pending', icon: 'pause' };
+            return 'Pending';
         case JobStepStatusType.SKIPPED:
-            return { label: 'Skipped', icon: 'fast-forward' };
+            return 'Skipped';
         case JobStepStatusType.ERROR:
-            return { label: 'Error', icon: 'warning-sign' };
+            return 'Error';
         case JobStepStatusType.RUNNING:
-            return { label: 'Running', icon: 'refresh' };
+            return 'Running';
         default:
             throw new Error('Unknown job step status');
     }
 };
-export const jobStatusLabel = (
-    status: JobStatusType,
-): { label: string; icon: IconName } => {
+export const jobStatusLabel = (status: JobStatusType) => {
     switch (status) {
         case JobStatusType.DONE:
-            return {
-                label: 'Successfully synced dbt project!',
-                icon: 'tick-circle',
-            };
+            return 'Successfully synced dbt project!';
         case JobStatusType.STARTED:
-            return { label: 'Pending sync', icon: 'pause' };
+            return 'Pending sync';
         case JobStatusType.ERROR:
-            return {
-                label: 'Error while syncing dbt project',
-                icon: 'warning-sign',
-            };
+            return 'Error while syncing dbt project';
         case JobStatusType.RUNNING:
-            return { label: 'Syncing dbt project', icon: 'refresh' };
+            return 'Syncing dbt project';
         default:
             throw new Error('Unknown job status');
     }
@@ -96,12 +87,31 @@ export const useJob = (
     onSuccess: (job: Job) => void,
     onError: (error: ApiError) => void,
 ) => {
+    const queryClient = useQueryClient();
+
     return useQuery<Job, ApiError>({
         queryKey: ['job', jobId],
         queryFn: () => getJob(jobId || ''),
         enabled: !!jobId,
-        refetchInterval: (data) => data?.jobStatus === 'RUNNING' && 500,
-        onSuccess,
+        refetchInterval: (data) =>
+            data === undefined ||
+            [JobStatusType.DONE, JobStatusType.ERROR].includes(data.jobStatus)
+                ? false
+                : 500,
+        staleTime: 0,
+        onSuccess: async (job) => {
+            if (job.jobStatus === JobStatusType.DONE) {
+                await queryClient.invalidateQueries(['tables']);
+
+                if (job.jobType === JobType.COMPILE_PROJECT) {
+                    await queryClient.invalidateQueries([
+                        'catalog',
+                        job.projectUuid,
+                    ]);
+                }
+            }
+            onSuccess(job);
+        },
         onError,
     });
 };
@@ -109,17 +119,18 @@ export const useJob = (
 export const useRefreshServer = () => {
     const { projectUuid } = useParams<{ projectUuid: string }>();
     const queryClient = useQueryClient();
-    const { setActiveJobId, showToastError } = useApp();
+    const { setActiveJobId } = useActiveJob();
+    const { showToastApiError } = useToaster();
     return useMutation<ApiRefreshResults, ApiError>({
         mutationKey: ['refresh', projectUuid],
         mutationFn: () => refresh(projectUuid),
         onSettled: async () =>
             queryClient.setQueryData(['status', projectUuid], 'loading'),
         onSuccess: (data) => setActiveJobId(data.jobUuid),
-        onError: (result) =>
-            showToastError({
+        onError: ({ error }) =>
+            showToastApiError({
                 title: 'Error syncing dbt project',
-                subtitle: result.error.message,
+                apiError: error,
             }),
     });
 };
